@@ -1,3 +1,5 @@
+use crate::buffer::WriteBuffer;
+
 /// Types that can be decoded from a LEB128 encoded integer.
 pub trait VarIntegerTarget: Sized {
     /// Decode a LEB128 variable length integer from the provided pointer.
@@ -24,6 +26,10 @@ pub trait VarIntegerTarget: Sized {
 
         unsafe { Self::decode(&buffer[..]) }
     }
+
+    /// Encode `self` as a LEB128 variable length integer into the provided
+    /// buffer.
+    fn encode<W: WriteBuffer>(self, buf: &mut W);
 }
 
 impl VarIntegerTarget for u64 {
@@ -111,6 +117,12 @@ impl VarIntegerTarget for u64 {
         // Uh oh! We've read 10 bytes and either didn't find the final byte or
         // we overflowed u64::MAX.
         (0, 11)
+    }
+
+    fn encode<W: WriteBuffer>(self, buf: &mut W)
+    where
+        [(); W::MIN_SIZE - 10]:, // Requires MIN_SIZE >= 10
+    {
     }
 }
 

@@ -1,5 +1,7 @@
 mod error;
 mod wire;
 
-// N.B. Publically export LEB128 because the functions are useful on their own.
+// Publically export `buffer` so users can implement the relevant traits.
+pub mod buffer;
+// Publically export `leb128` because the functions are useful on their own.
 pub mod leb128;
