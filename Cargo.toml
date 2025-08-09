@@ -6,6 +6,13 @@ edition = "2024"
 [dependencies]
 static_assertions = "1"
 thiserror = "1"
+leb128 = "0.2"
 
 [dev-dependencies]
+criterion = "0.6"
+leb128 = "0.2"
 proptest = { version = "1", features = ["attr-macro"] }
+
+[[bench]]
+name = "leb128"
+harness = false

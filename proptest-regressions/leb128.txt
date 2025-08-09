@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc fdef602b46eac3d0b4c4ed4624a9e267a0e181e5dba53501f9a7d58d16cfb47f # shrinks to ProptestLeb128DecodeU64Args = ProptestLeb128DecodeU64Args { field0: 72057594037927936 }
