@@ -29,7 +29,10 @@ pub trait VarIntegerTarget: Sized {
 
     /// Encode `self` as a LEB128 variable length integer into the provided
     /// buffer.
-    fn encode<W: WriteBuffer>(self, buf: &mut W);
+    fn encode<W: WriteBuffer>(self, buf: &mut W) -> usize;
+
+    /// The number of bytes required to encode this integer.
+    fn encoded_len(self) -> usize;
 }
 
 impl VarIntegerTarget for u64 {
@@ -119,10 +122,130 @@ impl VarIntegerTarget for u64 {
         (0, 11)
     }
 
-    fn encode<W: WriteBuffer>(self, buf: &mut W)
-    where
-        [(); W::MIN_SIZE - 10]:, // Requires MIN_SIZE >= 10
-    {
+    fn encode<W: WriteBuffer>(self, buf: &mut W) -> usize {
+        let mut value = self;
+
+        // Byte 1.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 1;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 2.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 2;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 3.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 3;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 4.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 4;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 5.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 5;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 6.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 6;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 7.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 7;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 8.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 8;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 9.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 9;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 10.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        assert_eq!(value, 0);
+        buf.write(byte);
+        return 10;
+    }
+
+    fn encoded_len(self) -> usize {
+        const BYTE_1_END: u64 = !(u64::MAX << 7);
+        const BYTE_2_STR: u64 = BYTE_1_END + 1;
+        const BYTE_2_END: u64 = !(u64::MAX << 14);
+        const BYTE_3_STR: u64 = BYTE_2_END + 1;
+        const BYTE_3_END: u64 = !(u64::MAX << 21);
+        const BYTE_4_STR: u64 = BYTE_3_END + 1;
+        const BYTE_4_END: u64 = !(u64::MAX << 28);
+        const BYTE_5_STR: u64 = BYTE_4_END + 1;
+        const BYTE_5_END: u64 = !(u64::MAX << 35);
+        const BYTE_6_STR: u64 = BYTE_5_END + 1;
+        const BYTE_6_END: u64 = !(u64::MAX << 42);
+        const BYTE_7_STR: u64 = BYTE_6_END + 1;
+        const BYTE_7_END: u64 = !(u64::MAX << 49);
+        const BYTE_8_STR: u64 = BYTE_7_END + 1;
+        const BYTE_8_END: u64 = !(u64::MAX << 56);
+        const BYTE_9_STR: u64 = BYTE_8_END + 1;
+        const BYTE_9_END: u64 = !(u64::MAX << 63);
+        const BYTE_10_STR: u64 = BYTE_9_END + 1;
+
+        match self {
+            u64::MIN..=BYTE_1_END => 1,
+            BYTE_2_STR..=BYTE_2_END => 2,
+            BYTE_3_STR..=BYTE_3_END => 3,
+            BYTE_4_STR..=BYTE_4_END => 4,
+            BYTE_5_STR..=BYTE_5_END => 5,
+            BYTE_6_STR..=BYTE_6_END => 6,
+            BYTE_7_STR..=BYTE_7_END => 7,
+            BYTE_8_STR..=BYTE_8_END => 8,
+            BYTE_9_STR..=BYTE_9_END => 9,
+            BYTE_10_STR..=u64::MAX => 10,
+        }
     }
 }
 
@@ -170,6 +293,29 @@ impl VarIntegerTarget for u32 {
         // Uh oh! We've read 5 bytes and either didn't find the final byte or
         // we overflowed u32::MAX.
         (0, 6)
+    }
+
+    fn encode<W: WriteBuffer>(self, _buf: &mut W) -> usize {
+        todo!()
+    }
+
+    fn encoded_len(self) -> usize {
+        const BYTE_1_END: u32 = !(u32::MAX << 7);
+        const BYTE_2_STR: u32 = BYTE_1_END + 1;
+        const BYTE_2_END: u32 = !(u32::MAX << 14);
+        const BYTE_3_STR: u32 = BYTE_2_END + 1;
+        const BYTE_3_END: u32 = !(u32::MAX << 21);
+        const BYTE_4_STR: u32 = BYTE_3_END + 1;
+        const BYTE_4_END: u32 = !(u32::MAX << 28);
+        const BYTE_5_STR: u32 = BYTE_4_END + 1;
+
+        match self {
+            u32::MIN..=BYTE_1_END => 1,
+            BYTE_2_STR..=BYTE_2_END => 2,
+            BYTE_3_STR..=BYTE_3_END => 3,
+            BYTE_4_STR..=BYTE_4_END => 4,
+            BYTE_5_STR..=u32::MAX => 5,
+        }
     }
 }
 
@@ -304,12 +450,14 @@ mod tests {
         #[track_caller]
         fn test_case(val: u64, len: u32) {
             let mut buffer: [u8; 16] = [0u8; 16];
-            leb128::write::unsigned(&mut buffer.as_mut_slice(), val).unwrap();
+            let encode_len = u64::encode(val, &mut buffer.as_mut_slice());
+
             // SAFETY - ValidRead: We created a buffer of 16 bytes.
             let (rnd, rnd_len) = unsafe { u64::decode(&buffer[..]) };
 
             assert_eq!(rnd, val, "invalid value");
             assert_eq!(len, rnd_len, "invalid length");
+            assert_eq!(len as usize, encode_len, "invalid encode length");
         }
 
         test_case(0, 1);
@@ -342,19 +490,18 @@ mod tests {
     }
 
     #[property_test]
-    fn proptest_leb128_decode_u64(val: u64) {
+    fn proptest_leb128_u64(val: u64) {
         let mut buffer: [u8; 16] = [0u8; 16];
-        leb128::write::unsigned(&mut buffer.as_mut_slice(), val).unwrap();
-        let og_len = buffer
-            .iter()
-            .take_while(|byte| (**byte & MSB) == MSB)
-            .count()
-            + 1;
+        let og_len = u64::encode(val, &mut buffer.as_mut_slice());
+        println!("{og_len} {buffer:?}");
 
         // SAFETY - ValidRead: We created a buffer of 16 bytes.
         let (rnd, len) = unsafe { u64::decode(&buffer[..]) };
-        prop_assert_eq!(rnd, val);
-        prop_assert_eq!(len, og_len as u32);
+        prop_assert_eq!(rnd, val, "invalid value");
+        prop_assert_eq!(len, og_len as u32, "invalid length");
+
+        let encoded_len = rnd.encoded_len();
+        prop_assert_eq!(encoded_len, len as usize);
     }
 
     #[property_test]
@@ -371,6 +518,9 @@ mod tests {
         let (rnd, len) = unsafe { u32::decode(&buffer[..]) };
         prop_assert_eq!(rnd, val);
         prop_assert_eq!(len, og_len as u32);
+
+        let encoded_len = rnd.encoded_len();
+        prop_assert_eq!(encoded_len, len as usize);
     }
 
     #[property_test]
