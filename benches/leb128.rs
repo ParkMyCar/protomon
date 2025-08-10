@@ -33,7 +33,7 @@ fn leb128_decoding_single(c: &mut Criterion) {
     for (data, len) in &values {
         group.bench_with_input(BenchmarkId::new("protomon", len), &data, |b, data| {
             b.iter(|| {
-                let value = unsafe { u64::decode(&data[..]) };
+                let value = unsafe { u64::decode_leb128(&data[..]) };
                 std::hint::black_box(value)
             })
         });
@@ -89,7 +89,7 @@ fn leb128_decoding_many(c: &mut Criterion) {
         |b, data| {
             b.iter(|| {
                 for (value, _len) in data {
-                    let value = unsafe { u64::decode(&value[..]) };
+                    let value = unsafe { u64::decode_leb128(&value[..]) };
                     std::hint::black_box(value);
                 }
             });

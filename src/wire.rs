@@ -32,7 +32,7 @@ pub enum WireType {
 
 // N.B. It's not super important that these are the same size, but keeping them as such
 // allows the compiler to make as many optimizations as possible.
-static_assertions::assert_eq_size!(WireType, Result<WireType, ()>);
+crate::asserts::assert_eq_size!(WireType, Result<WireType, ()>);
 
 impl WireType {
     /// Try to decode a [`WireType`] from the provided raw value.

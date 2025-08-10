@@ -75,3 +75,25 @@ impl WriteBuffer for Vec<u8> {
         self.capacity() - self.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::buffer::WriteBuffer;
+
+    #[test]
+    fn smoketest_slice_buffer() {
+        let mut buffer = [0u8; 16];
+        let mut cursor = &mut buffer[..];
+
+        assert!(WriteBuffer::write(&mut cursor, 42));
+        assert!(WriteBuffer::write(&mut cursor, 24));
+        assert_eq!(cursor.remaining(), 14);
+
+        let bytes_written = WriteBuffer::write_slice(&mut cursor, &[99; 16][..]);
+        assert_eq!(bytes_written, 14);
+        assert_eq!(cursor.remaining(), 0);
+
+        assert_eq!(&buffer[..2], [42, 24]);
+        assert_eq!(&buffer[2..], [99; 14]);
+    }
+}

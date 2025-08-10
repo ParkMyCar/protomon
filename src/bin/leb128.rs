@@ -1,6 +1,5 @@
 use protomon::leb128::{VarIntegerTarget, decode_u64_impl_a};
 
-const MSB: u8 = 0b1000_0000;
 const NUM_ITERATIONS: usize = 1_000_000_000;
 
 // N.B. These are purposefully out of order to confuse branch predictors.
@@ -17,13 +16,7 @@ pub fn main() {
         .into_iter()
         .map(|value| {
             let mut buffer: [u8; 16] = [0u8; 16];
-            leb128::write::unsigned(&mut buffer.as_mut_slice(), value).unwrap();
-            let len = buffer
-                .iter()
-                .take_while(|byte| (**byte & MSB) == MSB)
-                .count()
-                + 1;
-
+            let len = value.encode_leb128(&mut buffer.as_mut_slice());
             (buffer, len)
         })
         .collect();
@@ -52,21 +45,10 @@ pub fn main() {
     let start = std::time::Instant::now();
     for _ in 0..NUM_ITERATIONS {
         for (data, _len) in &values {
-            let value = unsafe { u64::decode(data) };
+            let value = unsafe { u64::decode_leb128(data) };
             std::hint::black_box(value);
         }
     }
     let total = start.elapsed();
     println!("main {total:?}");
-
-    let start = std::time::Instant::now();
-    for _ in 0..NUM_ITERATIONS {
-        for (data, _len) in &values {
-            let mut read = &data[..];
-            let value = unsafe { leb128::read::unsigned(&mut read).unwrap_unchecked() };
-            std::hint::black_box(value);
-        }
-    }
-    let total = start.elapsed();
-    println!("leb128 crate {total:?}");
 }

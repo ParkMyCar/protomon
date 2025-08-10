@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 static_assertions = "1"
 thiserror = "1"
-leb128 = "0.2"
 
 [dev-dependencies]
 criterion = "0.6"

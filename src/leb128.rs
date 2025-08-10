@@ -2,20 +2,32 @@ use crate::buffer::WriteBuffer;
 
 /// Types that can be decoded from a LEB128 encoded integer.
 pub trait VarIntegerTarget: Sized {
+    const MAX_BYTES: u32;
+
     /// Decode a LEB128 variable length integer from the provided pointer.
+    ///
+    /// Returns a tuple of the decoded value and the number of bytes read to
+    /// decode said value.
+    ///
+    /// # Validating Result
+    ///
+    /// The user must check that the number of bytes used to decode the value
+    /// is less than or equal to [`VarIntegerTarget::MAX_BYTES`]. See
+    /// [`VarIntegerTarget::try_decode_leb128_safe`] for a version of this
+    /// function that includes error handling.
     ///
     /// # Safety
     ///
     /// * __ValidRead__: The caller must ensure that `data` is valid for
-    ///   `Self::NUM_U64S_READ * 8` bytes to be read from the pointer.
+    ///   `Self::MAX_BYTES` bytes to be read from the pointer.
     ///
     /// See [`VarIntegerTarget::decode_slice`] for a version of this function
     /// that ensures the above safety variant.
     ///
-    unsafe fn decode(data: &[u8]) -> (Self, u32);
+    unsafe fn decode_leb128(data: &[u8]) -> (Self, u32);
 
     /// Decode a LEB128 variable
-    fn decode_safe(data: &[u8]) -> (Self, u32) {
+    fn decode_leb128_safe(data: &[u8]) -> (Self, u32) {
         // Copy all of the available bytes into a buffer that we know are safe
         // to read from.
         //
@@ -24,20 +36,32 @@ pub trait VarIntegerTarget: Sized {
         let len = data.len().min(16);
         buffer[..len].copy_from_slice(&data[..len]);
 
-        unsafe { Self::decode(&buffer[..]) }
+        unsafe { Self::decode_leb128(&buffer[..]) }
+    }
+
+    /// Decode a LEB128 value, checking if the result is valid.
+    fn try_decode_leb128_safe(data: &[u8]) -> Result<(Self, usize), ()> {
+        let (value, length) = VarIntegerTarget::decode_leb128_safe(data);
+        if length <= Self::MAX_BYTES {
+            Ok((value, length as usize))
+        } else {
+            Err(())
+        }
     }
 
     /// Encode `self` as a LEB128 variable length integer into the provided
     /// buffer.
-    fn encode<W: WriteBuffer>(self, buf: &mut W) -> usize;
+    fn encode_leb128<W: WriteBuffer>(self, buf: &mut W) -> usize;
 
     /// The number of bytes required to encode this integer.
-    fn encoded_len(self) -> usize;
+    fn encoded_leb128_len(self) -> usize;
 }
 
 impl VarIntegerTarget for u64 {
+    const MAX_BYTES: u32 = 10;
+
     #[inline]
-    unsafe fn decode(data: &[u8]) -> (Self, u32) {
+    unsafe fn decode_leb128(data: &[u8]) -> (Self, u32) {
         // Byte 1.
         let mut b: u8 = unsafe { *data.get_unchecked(0) };
         let mut value = u64::from(b);
@@ -122,7 +146,8 @@ impl VarIntegerTarget for u64 {
         (0, 11)
     }
 
-    fn encode<W: WriteBuffer>(self, buf: &mut W) -> usize {
+    #[inline]
+    fn encode_leb128<W: WriteBuffer>(self, buf: &mut W) -> usize {
         let mut value = self;
 
         // Byte 1.
@@ -214,7 +239,8 @@ impl VarIntegerTarget for u64 {
         return 10;
     }
 
-    fn encoded_len(self) -> usize {
+    #[inline]
+    fn encoded_leb128_len(self) -> usize {
         const BYTE_1_END: u64 = !(u64::MAX << 7);
         const BYTE_2_STR: u64 = BYTE_1_END + 1;
         const BYTE_2_END: u64 = !(u64::MAX << 14);
@@ -250,7 +276,10 @@ impl VarIntegerTarget for u64 {
 }
 
 impl VarIntegerTarget for u32 {
-    unsafe fn decode(data: &[u8]) -> (Self, u32) {
+    const MAX_BYTES: u32 = 5;
+
+    #[inline]
+    unsafe fn decode_leb128(data: &[u8]) -> (Self, u32) {
         // Byte 1.
         let mut b: u8 = unsafe { *data.get_unchecked(0) };
         let mut value: u32 = u32::from(b);
@@ -295,11 +324,56 @@ impl VarIntegerTarget for u32 {
         (0, 6)
     }
 
-    fn encode<W: WriteBuffer>(self, _buf: &mut W) -> usize {
-        todo!()
+    #[inline]
+    fn encode_leb128<W: WriteBuffer>(self, buf: &mut W) -> usize {
+        let mut value = self;
+
+        // Byte 1.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 1;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 2.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 2;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 3.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 3;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 4.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            buf.write(byte);
+            return 4;
+        }
+        buf.write(byte | 0x80);
+
+        // Byte 5.
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        assert_eq!(value, 0);
+        buf.write(byte);
+        return 5;
     }
 
-    fn encoded_len(self) -> usize {
+    #[inline]
+    fn encoded_leb128_len(self) -> usize {
         const BYTE_1_END: u32 = !(u32::MAX << 7);
         const BYTE_2_STR: u32 = BYTE_1_END + 1;
         const BYTE_2_END: u32 = !(u32::MAX << 14);
@@ -443,17 +517,15 @@ mod tests {
 
     use super::VarIntegerTarget;
 
-    const MSB: u8 = 0b1000_0000;
-
     #[test]
     fn smoketest_leb128_decode_u64() {
         #[track_caller]
         fn test_case(val: u64, len: u32) {
             let mut buffer: [u8; 16] = [0u8; 16];
-            let encode_len = u64::encode(val, &mut buffer.as_mut_slice());
+            let encode_len = u64::encode_leb128(val, &mut buffer.as_mut_slice());
 
             // SAFETY - ValidRead: We created a buffer of 16 bytes.
-            let (rnd, rnd_len) = unsafe { u64::decode(&buffer[..]) };
+            let (rnd, rnd_len) = unsafe { u64::decode_leb128(&buffer[..]) };
 
             assert_eq!(rnd, val, "invalid value");
             assert_eq!(len, rnd_len, "invalid length");
@@ -474,12 +546,14 @@ mod tests {
         #[track_caller]
         fn test_case(val: u32, len: u32) {
             let mut buffer: [u8; 8] = [0u8; 8];
-            leb128::write::unsigned(&mut buffer.as_mut_slice(), val as u64).unwrap();
-            // SAFETY - ValidRead: We created a buffer of 16 bytes.
-            let (rnd, rnd_len) = unsafe { u32::decode(&buffer[..]) };
+            let encode_len = u32::encode_leb128(val, &mut buffer.as_mut_slice());
 
-            assert_eq!(rnd, val);
-            assert_eq!(len, rnd_len);
+            // SAFETY - ValidRead: We created a buffer of 16 bytes.
+            let (rnd, rnd_len) = unsafe { u32::decode_leb128(&buffer[..]) };
+
+            assert_eq!(rnd, val, "invalid value");
+            assert_eq!(len, rnd_len, "invalid length");
+            assert_eq!(len as usize, encode_len, "invalid encode length");
         }
 
         test_case(0, 1);
@@ -492,46 +566,35 @@ mod tests {
     #[property_test]
     fn proptest_leb128_u64(val: u64) {
         let mut buffer: [u8; 16] = [0u8; 16];
-        let og_len = u64::encode(val, &mut buffer.as_mut_slice());
-        println!("{og_len} {buffer:?}");
+        let og_len = u64::encode_leb128(val, &mut buffer.as_mut_slice());
 
         // SAFETY - ValidRead: We created a buffer of 16 bytes.
-        let (rnd, len) = unsafe { u64::decode(&buffer[..]) };
+        let (rnd, len) = unsafe { u64::decode_leb128(&buffer[..]) };
         prop_assert_eq!(rnd, val, "invalid value");
         prop_assert_eq!(len, og_len as u32, "invalid length");
 
-        let encoded_len = rnd.encoded_len();
+        let encoded_len = rnd.encoded_leb128_len();
         prop_assert_eq!(encoded_len, len as usize);
     }
 
     #[property_test]
     fn proptest_leb128_decode_u32(val: u32) {
         let mut buffer: [u8; 8] = [0u8; 8];
-        leb128::write::unsigned(&mut buffer.as_mut_slice(), val as u64).unwrap();
-        let og_len = buffer
-            .iter()
-            .take_while(|byte| (**byte & MSB) == MSB)
-            .count()
-            + 1;
+        let og_len = u32::encode_leb128(val, &mut buffer.as_mut_slice());
 
         // SAFETY - ValidRead: We created a buffer of 16 bytes.
-        let (rnd, len) = unsafe { u32::decode(&buffer[..]) };
+        let (rnd, len) = unsafe { u32::decode_leb128(&buffer[..]) };
         prop_assert_eq!(rnd, val);
         prop_assert_eq!(len, og_len as u32);
 
-        let encoded_len = rnd.encoded_len();
+        let encoded_len = rnd.encoded_leb128_len();
         prop_assert_eq!(encoded_len, len as usize);
     }
 
     #[property_test]
     fn proptest_leb128_decode_u64_a(val: u64) {
         let mut buffer: [u8; 16] = [0u8; 16];
-        leb128::write::unsigned(&mut buffer.as_mut_slice(), val).unwrap();
-        let og_len = buffer
-            .iter()
-            .take_while(|byte| (**byte & MSB) == MSB)
-            .count()
-            + 1;
+        let og_len = val.encode_leb128(&mut buffer.as_mut_slice());
 
         // Note: Despite being deadcode we continue to test decode_u64_impl_a
         // to ensure its implementation remains correct.

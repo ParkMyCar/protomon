@@ -1,3 +1,4 @@
+mod asserts;
 mod error;
 mod wire;
 
