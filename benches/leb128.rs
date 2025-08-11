@@ -1,8 +1,6 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use protomon::leb128::{LebCodec, decode_u64_impl_a};
 
-const MSB: u8 = 0b1000_0000;
-
 fn leb128_decoding_single(c: &mut Criterion) {
     let values: Vec<_> = vec![
         1,
@@ -16,15 +14,9 @@ fn leb128_decoding_single(c: &mut Criterion) {
         // 0x8000_0000_0000_0000,
     ]
     .into_iter()
-    .map(|value| {
+    .map(|value: u64| {
         let mut buffer: [u8; 16] = [0u8; 16];
-        leb128::write::unsigned(&mut buffer.as_mut_slice(), value).unwrap();
-        let len = buffer
-            .iter()
-            .take_while(|byte| (**byte & MSB) == MSB)
-            .count()
-            + 1;
-
+        let len = value.encode_leb128(&mut buffer.as_mut_slice());
         (buffer, len)
     })
     .collect();
@@ -47,12 +39,6 @@ fn leb128_decoding_single(c: &mut Criterion) {
                 })
             },
         );
-        group.bench_with_input(BenchmarkId::new("leb128", len), &data, |b, data| {
-            b.iter(|| {
-                let value = leb128::read::unsigned(&mut data.as_slice()).unwrap();
-                std::hint::black_box(value)
-            })
-        });
     }
 }
 
@@ -69,15 +55,9 @@ fn leb128_decoding_many(c: &mut Criterion) {
         // 0x8000_0000_0000_0000,
     ]
     .into_iter()
-    .map(|value| {
+    .map(|value: u64| {
         let mut buffer: [u8; 16] = [0u8; 16];
-        leb128::write::unsigned(&mut buffer.as_mut_slice(), value).unwrap();
-        let len = buffer
-            .iter()
-            .take_while(|byte| (**byte & MSB) == MSB)
-            .count()
-            + 1;
-
+        let len = value.encode_leb128(&mut buffer.as_mut_slice());
         (buffer, len)
     })
     .collect();
@@ -102,18 +82,6 @@ fn leb128_decoding_many(c: &mut Criterion) {
             b.iter(|| {
                 for (value, _len) in data {
                     let value = unsafe { decode_u64_impl_a(value.as_ptr()) };
-                    std::hint::black_box(value);
-                }
-            });
-        },
-    );
-    group.bench_with_input(
-        BenchmarkId::new("leb128", values.len()),
-        &values,
-        |b, data| {
-            b.iter(|| {
-                for (value, _len) in data {
-                    let value = leb128::read::unsigned(&mut value.as_slice()).unwrap();
                     std::hint::black_box(value);
                 }
             });
