@@ -1,11 +1,10 @@
 use core::fmt;
 
-#[derive(Debug)]
-pub struct DecodeError;
-
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum DecodeErrorKind {
-    InvalidWireType { value: u64 },
+    InvalidWireType { value: u8 },
+    InvalidKey { reason: &'static str },
+    InvalidVarInt,
 }
 
 impl fmt::Display for DecodeErrorKind {
@@ -13,6 +12,12 @@ impl fmt::Display for DecodeErrorKind {
         match self {
             DecodeErrorKind::InvalidWireType { value } => {
                 write!(f, "invalid 'wire type' value: {value}")
+            }
+            DecodeErrorKind::InvalidKey { reason } => {
+                write!(f, "invalid key: '{reason}'")
+            }
+            DecodeErrorKind::InvalidVarInt => {
+                write!(f, "invalid leb128 varint")
             }
         }
     }

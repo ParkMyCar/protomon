@@ -1,3 +1,8 @@
+pub trait ReadBuffer {
+    fn read(&mut self) -> u8;
+}
+
+/// A writable buffer.
 pub trait WriteBuffer {
     /// Write a single byte into the buffer.
     fn write(&mut self, byte: u8) -> bool;

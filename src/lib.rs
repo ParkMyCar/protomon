@@ -1,6 +1,6 @@
-mod asserts;
 mod error;
-mod wire;
+mod util;
+pub mod wire;
 
 // Publically export `buffer` so users can implement the relevant traits.
 pub mod buffer;
