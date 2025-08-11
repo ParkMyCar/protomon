@@ -1,4 +1,4 @@
-use protomon::leb128::{VarIntegerTarget, decode_u64_impl_a};
+use protomon::leb128::{LebCodec, decode_u64_impl_a};
 
 const NUM_ITERATIONS: usize = 1_000_000_000;
 

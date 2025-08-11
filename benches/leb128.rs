@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use protomon::leb128::{VarIntegerTarget, decode_u64_impl_a};
+use protomon::leb128::{LebCodec, decode_u64_impl_a};
 
 const MSB: u8 = 0b1000_0000;
 

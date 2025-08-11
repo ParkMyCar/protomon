@@ -1,7 +1,7 @@
 use crate::buffer::WriteBuffer;
 
 /// Types that can be decoded from a LEB128 encoded integer.
-pub trait VarIntegerTarget: Sized {
+pub trait LebCodec: Sized {
     const MAX_BYTES: u32;
 
     /// Decode a LEB128 variable length integer from the provided pointer.
@@ -12,8 +12,8 @@ pub trait VarIntegerTarget: Sized {
     /// # Validating Result
     ///
     /// The user must check that the number of bytes used to decode the value
-    /// is less than or equal to [`VarIntegerTarget::MAX_BYTES`]. See
-    /// [`VarIntegerTarget::try_decode_leb128_safe`] for a version of this
+    /// is less than or equal to [`LebCodec::MAX_BYTES`]. See
+    /// [`LebCodec::try_decode_leb128_safe`] for a version of this
     /// function that includes error handling.
     ///
     /// # Safety
@@ -21,7 +21,7 @@ pub trait VarIntegerTarget: Sized {
     /// * __ValidRead__: The caller must ensure that `data` is valid for
     ///   `Self::MAX_BYTES` bytes to be read from the pointer.
     ///
-    /// See [`VarIntegerTarget::decode_slice`] for a version of this function
+    /// See [`LebCodec::decode_leb128_safe`] for a version of this function
     /// that ensures the above safety variant.
     ///
     unsafe fn decode_leb128(data: &[u8]) -> (Self, u32);
@@ -41,7 +41,7 @@ pub trait VarIntegerTarget: Sized {
 
     /// Decode a LEB128 value, checking if the result is valid.
     fn try_decode_leb128_safe(data: &[u8]) -> Result<(Self, usize), ()> {
-        let (value, length) = VarIntegerTarget::decode_leb128_safe(data);
+        let (value, length) = LebCodec::decode_leb128_safe(data);
         if length <= Self::MAX_BYTES {
             Ok((value, length as usize))
         } else {
@@ -57,7 +57,7 @@ pub trait VarIntegerTarget: Sized {
     fn encoded_leb128_len(self) -> usize;
 }
 
-impl VarIntegerTarget for u64 {
+impl LebCodec for u64 {
     const MAX_BYTES: u32 = 10;
 
     #[inline]
@@ -275,7 +275,7 @@ impl VarIntegerTarget for u64 {
     }
 }
 
-impl VarIntegerTarget for u32 {
+impl LebCodec for u32 {
     const MAX_BYTES: u32 = 5;
 
     #[inline]
@@ -515,7 +515,7 @@ mod tests {
 
     use crate::leb128::decode_u64_impl_a;
 
-    use super::VarIntegerTarget;
+    use super::LebCodec;
 
     #[test]
     fn smoketest_leb128_decode_u64() {
