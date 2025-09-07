@@ -4,6 +4,21 @@ use crate::error::DecodeErrorKind;
 use crate::leb128::LebCodec;
 use crate::util::{likely, unlikely};
 
+/// Minimum value of a protobuf tag.
+pub const MINIMUM_TAG_VAL: u32 = 1;
+/// Maximum value of a protobuf tag.
+pub const MAXIMUM_TAG_VAL: u32 = (1 << 29) - 1;
+
+/// Encodes the provided tag and wire_type as a protobuf field key.
+///
+/// Follows the specification from <https://protobuf.dev/programming-guides/encoding>
+/// under the "Message Structure" section.
+#[inline]
+pub fn encode_key<B: bytes::BufMut>(wire_type: WireType, tag: u32, buf: &mut B) {
+    let key = (tag << 3) | wire_type as u32;
+    u32::encode_leb128(key, buf);
+}
+
 /// Decodes the key from a protobuf encoded message.
 ///
 /// Follows the specification from <https://protobuf.dev/programming-guides/encoding>
@@ -108,9 +123,67 @@ impl TryFrom<u8> for WireType {
     }
 }
 
+pub trait Decode {
+    type Target<'a>
+    where
+        Self: 'a;
+
+    fn decode_slice<'s>(s: &'s [u8]) -> Self::Target<'s>;
+}
+
+impl Decode for str {
+    type Target<'a>
+        = &'a str
+    where
+        Self: 'a;
+
+    fn decode_slice<'s>(s: &'s [u8]) -> Self::Target<'s> {
+        unsafe { std::str::from_utf8_unchecked(s) }
+    }
+}
+
+impl Decode for String {
+    type Target<'a>
+        = String
+    where
+        Self: 'a;
+
+    fn decode_slice<'s>(s: &'s [u8]) -> String {
+        unsafe { std::str::from_utf8_unchecked(s).to_string() }
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use proptest::prelude::*;
+
+    use crate::wire::MINIMUM_TAG_VAL;
     use crate::wire::WireType;
+    use crate::wire::decode_key;
+    use crate::wire::encode_key;
+
+    #[test]
+    fn proptest_key_roundtrips() {
+        fn arb_tag() -> impl Strategy<Value = u32> {
+            MINIMUM_TAG_VAL..=MINIMUM_TAG_VAL
+        }
+
+        fn arb_wiretype() -> impl Strategy<Value = WireType> {
+            (0..5u8).prop_map(|val| WireType::try_from_val(val).expect("known valid"))
+        }
+
+        fn test(tag: u32, wire_type: WireType) {
+            let mut buf = Vec::with_capacity(16);
+            encode_key(wire_type, tag, &mut buf);
+            let (rnd_wire_type, rnd_tag) = decode_key(&mut &buf[..]).unwrap();
+
+            assert_eq!(tag, rnd_tag);
+            assert_eq!(wire_type, rnd_wire_type);
+        }
+
+        let strat = (arb_tag(), arb_wiretype());
+        proptest!(|((tag, wire_type) in strat)| test(tag, wire_type))
+    }
 
     #[test]
     fn test_all_valid_values() {

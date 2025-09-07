@@ -1,4 +1,3 @@
-use crate::buffer::WriteBuffer;
 use crate::error::DecodeErrorKind;
 
 /// Types that can be decoded from a LEB128 encoded integer.
@@ -54,7 +53,7 @@ pub trait LebCodec: Sized {
 
     /// Encode `self` as a LEB128 variable length integer into the provided
     /// buffer.
-    fn encode_leb128<W: WriteBuffer>(self, buf: &mut W) -> usize;
+    fn encode_leb128<B: bytes::BufMut>(self, buf: &mut B) -> usize;
 
     /// The number of bytes required to encode this integer.
     fn encoded_leb128_len(self) -> usize;
@@ -150,95 +149,95 @@ impl LebCodec for u64 {
     }
 
     #[inline]
-    fn encode_leb128<W: WriteBuffer>(self, buf: &mut W) -> usize {
+    fn encode_leb128<B: bytes::BufMut>(self, buf: &mut B) -> usize {
         let mut value = self;
 
         // Byte 1.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 1;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 2.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 2;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 3.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 3;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 4.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 4;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 5.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 5;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 6.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 6;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 7.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 7;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 8.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 8;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 9.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 9;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 10.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         assert_eq!(value, 0);
-        buf.write(byte);
+        buf.put_u8(byte);
         return 10;
     }
 
@@ -328,50 +327,50 @@ impl LebCodec for u32 {
     }
 
     #[inline]
-    fn encode_leb128<W: WriteBuffer>(self, buf: &mut W) -> usize {
+    fn encode_leb128<B: bytes::BufMut>(self, buf: &mut B) -> usize {
         let mut value = self;
 
         // Byte 1.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 1;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 2.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 2;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 3.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 3;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 4.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         if value == 0 {
-            buf.write(byte);
+            buf.put_u8(byte);
             return 4;
         }
-        buf.write(byte | 0x80);
+        buf.put_u8(byte | 0x80);
 
         // Byte 5.
         let byte = (value & 0x7f) as u8;
         value >>= 7;
         assert_eq!(value, 0);
-        buf.write(byte);
+        buf.put_u8(byte);
         return 5;
     }
 
