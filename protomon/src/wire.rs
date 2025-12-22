@@ -46,7 +46,7 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
         });
     } else if likely(chunk[0] < 0x80 || chunk_len > 10) {
         let (value, bytes_read) = unsafe { u64::decode_leb128(chunk)? };
-        buf.advance(bytes_read as usize);
+        buf.advance(bytes_read);
         value
     } else {
         u64::decode_leb128_buf(buf)?.0
@@ -82,10 +82,7 @@ pub fn skip_field<B: bytes::Buf>(wire_type: WireType, buf: &mut B) -> Result<(),
             return Ok(());
         }
         WireType::I64 => 8,
-        WireType::Len => {
-            let len = decode_len(buf)?;
-            len
-        }
+        WireType::Len => decode_len(buf)?,
         WireType::I32 => 4,
         WireType::SGroup | WireType::EGroup => {
             return Err(DecodeErrorKind::DeprecatedGroupEncoding);
@@ -173,12 +170,12 @@ impl TryFrom<u8> for WireType {
 mod test {
     use proptest::prelude::*;
 
-    use crate::wire::MINIMUM_TAG_VAL;
-    use crate::wire::WireType;
     use crate::wire::decode_key;
     use crate::wire::decode_len;
     use crate::wire::encode_key;
     use crate::wire::skip_field;
+    use crate::wire::WireType;
+    use crate::wire::MINIMUM_TAG_VAL;
 
     #[test]
     fn proptest_key_roundtrips() {

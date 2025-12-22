@@ -1,9 +1,9 @@
 //! Scalar protobuf types and their encoding/decoding implementations.
 
+use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
 use crate::leb128::LebCodec;
 use crate::wire::WireType;
-use super::{ProtoDecode, ProtoEncode, ProtoType};
 
 impl ProtoType for u64 {
     const WIRE_TYPE: WireType = WireType::Varint;
@@ -11,7 +11,11 @@ impl ProtoType for u64 {
 
 impl ProtoDecode for u64 {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         *dst = u64::decode_leb128_buf(buf).map(|(v, _)| v)?;
         Ok(())
     }
@@ -35,7 +39,11 @@ impl ProtoType for u32 {
 
 impl ProtoDecode for u32 {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         *dst = u32::decode_leb128_buf(buf).map(|(v, _)| v)?;
         Ok(())
     }
@@ -59,7 +67,11 @@ impl ProtoType for i64 {
 
 impl ProtoDecode for i64 {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         *dst = u64::decode_leb128_buf(buf).map(|(v, _)| v as i64)?;
         Ok(())
     }
@@ -83,7 +95,11 @@ impl ProtoType for i32 {
 
 impl ProtoDecode for i32 {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         // Protobuf int32 is encoded as varint, sign-extended to 64 bits.
         *dst = u64::decode_leb128_buf(buf).map(|(v, _)| v as i32)?;
         Ok(())
@@ -109,7 +125,11 @@ impl ProtoType for bool {
 
 impl ProtoDecode for bool {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         *dst = u64::decode_leb128_buf(buf).map(|(v, _)| v != 0)?;
         Ok(())
     }
@@ -155,7 +175,11 @@ impl ProtoType for Sint32 {
 
 impl ProtoDecode for Sint32 {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         *dst = Sint32(u32::decode_leb128_buf(buf).map(|(v, _)| zigzag_decode_32(v))?);
         Ok(())
     }
@@ -201,7 +225,11 @@ impl ProtoType for Sint64 {
 
 impl ProtoDecode for Sint64 {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         *dst = Sint64(u64::decode_leb128_buf(buf).map(|(v, _)| zigzag_decode_64(v))?);
         Ok(())
     }
@@ -237,7 +265,11 @@ impl ProtoType for Fixed32 {
 
 impl ProtoDecode for Fixed32 {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         if buf.remaining() < 4 {
             return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
         }
@@ -276,7 +308,11 @@ impl ProtoType for Fixed64 {
 
 impl ProtoDecode for Fixed64 {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         if buf.remaining() < 8 {
             return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
         }
@@ -315,7 +351,11 @@ impl ProtoType for Sfixed32 {
 
 impl ProtoDecode for Sfixed32 {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         if buf.remaining() < 4 {
             return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
         }
@@ -354,7 +394,11 @@ impl ProtoType for Sfixed64 {
 
 impl ProtoDecode for Sfixed64 {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         if buf.remaining() < 8 {
             return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
         }
@@ -381,7 +425,11 @@ impl ProtoType for f32 {
 
 impl ProtoDecode for f32 {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         if buf.remaining() < 4 {
             return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
         }
@@ -408,7 +456,11 @@ impl ProtoType for f64 {
 
 impl ProtoDecode for f64 {
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         if buf.remaining() < 8 {
             return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
         }

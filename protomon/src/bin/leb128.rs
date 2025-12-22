@@ -1,4 +1,4 @@
-use protomon::leb128::{LebCodec, decode_u64_impl_a};
+use protomon::leb128::{decode_u64_impl_a, LebCodec};
 
 const NUM_ITERATIONS: usize = 1_000_000_000;
 
@@ -46,7 +46,7 @@ pub fn main() {
     for _ in 0..NUM_ITERATIONS {
         for (data, _len) in &values {
             let value = unsafe { u64::decode_leb128(data) };
-            std::hint::black_box(value);
+            let _ = std::hint::black_box(value);
         }
     }
     let total = start.elapsed();

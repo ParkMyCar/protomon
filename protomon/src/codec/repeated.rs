@@ -330,10 +330,8 @@ impl<T: ProtoType + ProtoEncode + ProtoDecode + Default + 'static> ProtoEncode f
     /// The derive macro handles key encoding for each element.
     /// Silently skips any values that fail to decode.
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-        for result in self.iter() {
-            if let Ok(value) = result {
-                value.encode(buf);
-            }
+        for value in self.iter().flatten() {
+            value.encode(buf);
         }
     }
 
@@ -363,11 +361,9 @@ impl<T: ProtoType + ProtoEncode + ProtoDecode + Default + 'static> ProtoRepeated
 
     /// Encode all elements with their field keys.
     fn encode_repeated<B: bytes::BufMut>(&self, tag: u32, buf: &mut B) {
-        for result in self.iter() {
-            if let Ok(value) = result {
-                wire::encode_key(T::WIRE_TYPE, tag, buf);
-                value.encode(buf);
-            }
+        for value in self.iter().flatten() {
+            wire::encode_key(T::WIRE_TYPE, tag, buf);
+            value.encode(buf);
         }
     }
 

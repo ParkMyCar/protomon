@@ -1,7 +1,7 @@
-mod util;
 pub mod codec;
 pub mod error;
 pub mod leb128;
+mod util;
 pub mod wire;
 
 #[cfg(feature = "derive")]

@@ -53,7 +53,7 @@ mod tests {
     #[test]
     fn test_option_decode_into() {
         // Encode a varint
-        let buf = vec![0x96, 0x01]; // 150 in varint
+        let buf = [0x96, 0x01]; // 150 in varint
         let mut opt: Option<i32> = None;
         <Option<i32> as ProtoDecode>::decode_into(&mut &buf[..], &mut opt, 0).unwrap();
         assert_eq!(opt, Some(150));
@@ -83,7 +83,7 @@ mod tests {
         assert!(opt.is_none());
 
         // Decode a string
-        let buf = vec![5, b'h', b'e', b'l', b'l', b'o']; // length-prefixed "hello"
+        let buf = [5, b'h', b'e', b'l', b'l', b'o']; // length-prefixed "hello"
         let mut opt: Option<ProtoString> = None;
         <Option<ProtoString> as ProtoDecode>::decode_into(&mut &buf[..], &mut opt, 0).unwrap();
         assert_eq!(opt.as_ref().map(|s| s.as_str()), Some("hello"));

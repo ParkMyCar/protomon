@@ -36,7 +36,8 @@ fn main() {
     println!("Encoded {} bytes: {:02x?}", buf.len(), buf);
 
     let decoded = Scores::decode_message(Bytes::from(buf)).unwrap();
-    println!("Decoded: player={:?}, scores={:?}, tags={:?}",
+    println!(
+        "Decoded: player={:?}, scores={:?}, tags={:?}",
         decoded.player_name,
         decoded.scores,
         decoded.tags.iter().map(|s| s.as_str()).collect::<Vec<_>>()
@@ -56,8 +57,10 @@ fn main() {
     println!("Encoded {} bytes: {:02x?}", buf2.len(), buf2);
 
     let decoded2 = Scores::decode_message(Bytes::from(buf2)).unwrap();
-    println!("Decoded: player={:?}, scores={:?}, tags={:?}",
-        decoded2.player_name, decoded2.scores, decoded2.tags);
+    println!(
+        "Decoded: player={:?}, scores={:?}, tags={:?}",
+        decoded2.player_name, decoded2.scores, decoded2.tags
+    );
     assert_eq!(empty, decoded2);
 
     println!("\nRoundtrip successful!");

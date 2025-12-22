@@ -1,9 +1,9 @@
 //! Message-level types and helpers.
 
+use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
 use crate::leb128::LebCodec;
 use crate::wire::WireType;
-use super::{ProtoDecode, ProtoEncode, ProtoType};
 
 /// Trait for protobuf message types.
 ///
@@ -113,7 +113,11 @@ impl<T: ProtoMessage> ProtoType for LazyMessage<T> {
 impl<T: ProtoMessage> ProtoDecode for LazyMessage<T> {
     /// Decodes the length prefix and stores the message bytes for lazy decoding.
     #[inline]
-    fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
             return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
@@ -164,10 +168,10 @@ pub fn skip_len_field<B: bytes::Buf>(buf: &mut B) -> Result<bytes::Bytes, Decode
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::{ProtoDecode, ProtoEncode, ProtoString};
-    use bytes::Buf;
+    use super::*;
     use crate::wire::{decode_key, encode_key, skip_field, WireType};
+    use bytes::Buf;
 
     /// Inner message: `message PhoneNumber { string number = 1; int32 type = 2; }`
     #[derive(Debug, Clone, PartialEq, Default)]
@@ -192,7 +196,11 @@ mod tests {
                     _ => skip_field(wire_type, &mut slice)?,
                 }
             }
-            Ok(PhoneNumber { buf, number, phone_type })
+            Ok(PhoneNumber {
+                buf,
+                number,
+                phone_type,
+            })
         }
 
         fn encode_message<B: bytes::BufMut>(&self, buf: &mut B) {

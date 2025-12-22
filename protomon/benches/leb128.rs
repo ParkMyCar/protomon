@@ -1,5 +1,5 @@
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use protomon::leb128::{LebCodec, decode_u64_impl_a};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use protomon::leb128::{decode_u64_impl_a, LebCodec};
 
 fn leb128_decoding_single(c: &mut Criterion) {
     let values: Vec<_> = vec![

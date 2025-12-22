@@ -253,7 +253,7 @@ impl LebCodec for u64 {
         value >>= 7;
         assert_eq!(value, 0);
         buf.put_u8(byte);
-        return 10;
+        10
     }
 
     #[inline]
@@ -386,7 +386,7 @@ impl LebCodec for u32 {
         value >>= 7;
         assert_eq!(value, 0);
         buf.put_u8(byte);
-        return 5;
+        5
     }
 
     #[inline]
@@ -425,10 +425,9 @@ impl LebCodec for u32 {
 /// * Add a "b" impl which decodes one u64 and optionally returns early, then
 ///   decodes the second chunk only if necessary.
 ///
-/// ### SAFETY:
+/// # Safety
 ///
-/// * ValidRead: The caller must guarantee that `data` is valid for a 16-byte read.
-///
+/// The caller must guarantee that `data` is valid for a 16-byte read.
 #[allow(dead_code)]
 #[inline]
 pub unsafe fn decode_u64_impl_a(data: *const u8) -> (u64, u32) {
@@ -546,7 +545,7 @@ mod tests {
 
             assert_eq!(rnd, val, "invalid value");
             assert_eq!(len, rnd_len, "invalid length");
-            assert_eq!(len as usize, encode_len, "invalid encode length");
+            assert_eq!(len, encode_len, "invalid encode length");
         }
 
         test_case(0, 1);
@@ -570,7 +569,7 @@ mod tests {
 
             assert_eq!(rnd, val, "invalid value");
             assert_eq!(len, rnd_len, "invalid length");
-            assert_eq!(len as usize, encode_len, "invalid encode length");
+            assert_eq!(len, encode_len, "invalid encode length");
         }
 
         test_case(0, 1);
@@ -591,7 +590,7 @@ mod tests {
         prop_assert_eq!(len, og_len, "invalid length");
 
         let encoded_len = rnd.encoded_leb128_len();
-        prop_assert_eq!(encoded_len, len as usize);
+        prop_assert_eq!(encoded_len, len);
     }
 
     #[property_test]
@@ -605,7 +604,7 @@ mod tests {
         prop_assert_eq!(len, og_len);
 
         let encoded_len = rnd.encoded_leb128_len();
-        prop_assert_eq!(encoded_len, len as usize);
+        prop_assert_eq!(encoded_len, len);
     }
 
     #[property_test]
