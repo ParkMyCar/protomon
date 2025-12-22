@@ -51,7 +51,9 @@ impl<T: ProtoDecode + Default> Iterator for PackedIter<T> {
     }
 }
 
-/// Lazily decoded `repeated` field.
+/// Repeated field that can be either lazily decoded or user-constructed.
+///
+/// # Lazy Variant
 ///
 /// The protobuf wire spec denotes that repeated fields are stored as repeated
 /// instances of `<tag><item>` in the encoded binary. The encoded values do not
@@ -69,74 +71,138 @@ impl<T: ProtoDecode + Default> Iterator for PackedIter<T> {
 /// 11: 107
 /// ```
 ///
-/// During deserialization we could allocate a [`Vec`] and build a collection
-/// of these items, but that's most likely wasteful. Generally you never need
-/// to access a field, or you only access it once. So instead we make this type
-/// generic over a [`RepeatedStorage`].
+/// During deserialization we skip over repeated field values, recording only
+/// the count and minimum offset. When iterating, we scan from the minimum
+/// offset to find all values with the matching tag.
 ///
 /// Offsets stored point to the value (after the key has been decoded).
-#[derive(Clone)]
-pub struct Repeated<T, S: RepeatedStorage = BasicStorage> {
-    /// Buffer of the entire message this field belongs to.
-    buf: bytes::Bytes,
-    /// The tag number for the repeated field (used for scan mode).
-    tag_num: u32,
-    /// Record of value offsets (after key) encountered during initial deserialization.
-    storage: S,
-    /// Running sum of encoded value lengths (excluding keys).
-    values_len: u32,
-
-    _marker: core::marker::PhantomData<T>,
+///
+/// # Owned Variant
+///
+/// Users can construct a `Repeated` field with owned values for encoding:
+///
+/// ```ignore
+/// let repeated: Repeated<i32> = Repeated::owned(vec![1, 2, 3].into_iter());
+/// ```
+pub enum Repeated<T: 'static> {
+    /// Lazily decoded repeated field - references original buffer.
+    Lazy {
+        /// Buffer of the entire message this field belongs to.
+        buf: bytes::Bytes,
+        /// The tag number for the repeated field (used for scan mode iteration).
+        tag_num: u32,
+        /// Number of repeated field occurrences.
+        count: u32,
+        /// Minimum value offset seen (after key). Never 0 since there's always a key.
+        min_offset: Option<NonZeroU32>,
+        /// Running sum of encoded value lengths (excluding keys).
+        values_len: u32,
+        /// Marker for the element type.
+        _marker: core::marker::PhantomData<T>,
+    },
+    /// User-constructed repeated field with owned values.
+    Owned {
+        /// Iterator over the values.
+        iter: Box<dyn CloneableIterator<T>>,
+    },
 }
 
-impl<T, S: RepeatedStorage> Repeated<T, S> {
-    /// Create a new empty Repeated field wrapper.
-    pub fn new(buf: bytes::Bytes, tag_num: u32) -> Self {
-        Self {
+impl<T: 'static> Clone for Repeated<T> {
+    fn clone(&self) -> Self {
+        match self {
+            lazy @ Self::Lazy { .. } => lazy.clone(),
+            Self::Owned { iter } => Self::Owned {
+                iter: iter.clone_box(),
+            },
+        }
+    }
+}
+
+impl<T: 'static> Repeated<T> {
+    /// Create a new empty Lazy repeated field wrapper.
+    pub fn lazy(buf: bytes::Bytes, tag_num: u32) -> Self {
+        Self::Lazy {
             buf,
             tag_num,
-            storage: S::default(),
+            count: 0,
+            min_offset: None,
             values_len: 0,
             _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Create a new Owned repeated field from an iterator.
+    ///
+    /// The iterator must implement `ExactSizeIterator` so we can efficiently
+    /// determine the field count.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let repeated: Repeated<i32> = Repeated::owned(vec![1, 2, 3].into_iter());
+    /// ```
+    pub fn owned<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = T> + ExactSizeIterator + Clone + 'static,
+    {
+        Self::Owned {
+            iter: Box::new(iter),
         }
     }
 
     /// Returns the number of elements in this repeated field.
     #[inline]
     pub fn len(&self) -> usize {
-        self.storage.count()
+        match self {
+            Self::Lazy { count, .. } => *count as usize,
+            Self::Owned { iter } => iter.len(),
+        }
     }
 
     /// Returns true if this repeated field has no elements.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.storage.count() == 0
-    }
-
-    /// Returns an iterator over the repeated field elements.
-    pub fn iter(&self) -> RepeatedIter<'_, T> {
-        let mode = match self.storage.offsets() {
-            Some(offsets) => RepeatedIterMode::IndexOffsets { offsets, index: 0 },
-            None => {
-                let offset = match self.storage.min_offset() {
-                    Some(o) => o.get() as usize,
-                    // Invariant: If we don't have an offset then we must not have any elements.
-                    None => {
-                        assert_eq!(self.storage.count(), 0);
-                        0
-                    }
-                };
-                RepeatedIterMode::Scan {
-                    offset,
-                    started: false,
-                }
-            }
-        };
-        RepeatedIter::new(self.buf.clone(), self.tag_num, self.storage.count(), mode)
+        match self {
+            Self::Lazy { count, .. } => *count == 0,
+            Self::Owned { iter } => iter.is_empty(),
+        }
     }
 }
 
-impl<'a, T: ProtoDecode + Default, S: RepeatedStorage> IntoIterator for &'a Repeated<T, S> {
+impl<T: ProtoDecode + Default + 'static> Repeated<T> {
+    /// Returns an iterator over the repeated field elements.
+    ///
+    /// Works on both `Lazy` and `Owned` variants.
+    pub fn iter(&self) -> RepeatedIter<'_, T> {
+        match self {
+            Self::Lazy {
+                buf,
+                tag_num,
+                count,
+                min_offset,
+                ..
+            } => {
+                let offset = match min_offset {
+                    Some(o) => o.get() as usize,
+                    // Invariant: If we don't have an offset then we must not have any elements.
+                    None => {
+                        assert_eq!(*count, 0);
+                        0
+                    }
+                };
+                RepeatedIter::Decode(RepeatedDecodeIter::new(
+                    buf.clone(),
+                    *tag_num,
+                    *count as usize,
+                    offset,
+                ))
+            }
+            Self::Owned { iter } => RepeatedIter::Owned(iter.clone_box()),
+        }
+    }
+}
+
+impl<'a, T: ProtoDecode + Default + 'static> IntoIterator for &'a Repeated<T> {
     type Item = Result<T, DecodeErrorKind>;
     type IntoIter = RepeatedIter<'a, T>;
 
@@ -145,20 +211,21 @@ impl<'a, T: ProtoDecode + Default, S: RepeatedStorage> IntoIterator for &'a Repe
     }
 }
 
-impl<T: ProtoType, S: RepeatedStorage> ProtoType for Repeated<T, S> {
+impl<T: ProtoType + 'static> ProtoType for Repeated<T> {
     // Use the element type's wire type.
     //
     // N.B. Non-packed repeated fields are encoded as multiples of `<tag><field>`.
     const WIRE_TYPE: WireType = T::WIRE_TYPE;
 }
 
-impl<T: ProtoType, S: RepeatedStorage> ProtoDecode for Repeated<T, S> {
+impl<T: ProtoType + 'static> ProtoDecode for Repeated<T> {
     #[inline]
     fn init<B: bytes::Buf>(msg_buf: B, tag: u32) -> Self {
-        Self {
+        Self::Lazy {
             buf: bytes::Bytes::copy_from_slice(msg_buf.chunk()),
             tag_num: tag,
-            storage: S::default(),
+            count: 0,
+            min_offset: None,
             values_len: 0,
             _marker: core::marker::PhantomData,
         }
@@ -167,88 +234,137 @@ impl<T: ProtoType, S: RepeatedStorage> ProtoDecode for Repeated<T, S> {
     /// Decode a single occurrence of a repeated field.
     ///
     /// Records the value offset and skips over the value in the buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called on an `Owned` variant.
     #[inline]
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,
         dst: &mut Self,
         offset: usize,
     ) -> Result<(), DecodeErrorKind> {
+        let Self::Lazy {
+            count,
+            min_offset,
+            values_len,
+            ..
+        } = dst
+        else {
+            return Err(DecodeErrorKind::ProgrammingError {
+                reason: "decode_into is not supported on Owned variant",
+            });
+        };
+
         let before = buf.remaining();
         crate::wire::skip_field(T::WIRE_TYPE, buf)?;
         let value_len = (before - buf.remaining()) as u32;
 
-        dst.storage.merge_into(offset as u32);
-        dst.values_len += value_len;
+        // Value offsets are always > 0 because there is at least a key before this.
+        let offset_nz = NonZeroU32::new(offset as u32).expect("value offset cannot be 0");
+        *min_offset = Some(match *min_offset {
+            Some(current) => current.min(offset_nz),
+            None => offset_nz,
+        });
+        *count += 1;
+        *values_len += value_len;
+
         Ok(())
     }
 }
 
-impl<T: ProtoType + ProtoEncode + ProtoDecode + Default, S: RepeatedStorage> ProtoEncode
-    for Repeated<T, S>
-{
+impl<T: ProtoType + ProtoEncode + ProtoDecode + Default + 'static> ProtoEncode for Repeated<T> {
+    /// Encode all values without field keys.
+    ///
+    /// The derive macro handles key encoding for each element.
+    /// Silently skips any values that fail to decode.
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-        use crate::wire::encode_key;
-
-        for item in self.iter() {
-            if let Ok(value) = item {
-                encode_key(T::WIRE_TYPE, self.tag_num, buf);
+        for result in self.iter() {
+            if let Ok(value) = result {
                 value.encode(buf);
             }
         }
     }
 
+    /// Returns the encoded length of all values (not including field keys).
     fn encoded_len(&self) -> usize {
-        let count = self.storage.count();
-        if count == 0 {
-            return 0;
+        match self {
+            // For Lazy, we tracked the length during decode
+            Self::Lazy { values_len, .. } => *values_len as usize,
+            // For Owned, we must iterate and sum
+            Self::Owned { iter } => iter.clone_box().map(|v| v.encoded_len()).sum(),
         }
-
-        // Each element needs: <key (tag + wire_type as varint)><value>
-        let key_len = crate::wire::encoded_key_len(self.tag_num);
-        key_len * count + self.values_len as usize
     }
 }
 
-/// Iterator over unpacked repeated fields.
+/// Iterator over repeated field elements.
 ///
-/// Supports two modes based on [`RepeatedStorage`]:
-/// * Indexed mode (with offsets): jumps directly to stored value offsets
-/// * BasicScan mode: first item decoded directly from min_offset, rest scanned
+/// This enum wraps both lazy decoding (from `Repeated::Lazy`) and owned iteration
+/// (from `Repeated::Owned`), providing a unified interface that exposes decode errors.
+pub enum RepeatedIter<'a, T: 'static> {
+    /// Decoding iterator for lazily decoded repeated fields.
+    Decode(RepeatedDecodeIter<'a, T>),
+    /// Owned iterator for user-constructed repeated fields.
+    Owned(Box<dyn CloneableIterator<T> + 'a>),
+}
+
+impl<T: ProtoDecode + Default + 'static> Iterator for RepeatedIter<'_, T> {
+    type Item = Result<T, DecodeErrorKind>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Decode(iter) => iter.next(),
+            Self::Owned(iter) => iter.next().map(Ok),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Decode(iter) => iter.size_hint(),
+            Self::Owned(iter) => {
+                let len = iter.len();
+                (len, Some(len))
+            }
+        }
+    }
+}
+
+impl<T: ProtoDecode + Default + 'static> ExactSizeIterator for RepeatedIter<'_, T> {}
+
+/// Iterator for lazily decoding repeated fields from a buffer.
 ///
-pub struct RepeatedIter<'a, T> {
+/// Scans through the message buffer starting at min_offset to find
+/// all occurrences of the repeated field.
+pub struct RepeatedDecodeIter<'a, T> {
     /// Buffer of the entire message this field belongs to.
     buf: bytes::Bytes,
-    /// The tag number for the repeated field (used for BasicScan mode).
+    /// The tag number for the repeated field.
     tag_num: u32,
     /// Remaining elements to iterate.
     remaining: usize,
-    /// Iteration mode.
-    mode: RepeatedIterMode<'a>,
+    /// Current byte offset in the buffer.
+    offset: usize,
+    /// Whether we've started iterating (first element is at min_offset).
+    started: bool,
 
-    _marker: core::marker::PhantomData<T>,
+    _marker: core::marker::PhantomData<&'a T>,
 }
 
-enum RepeatedIterMode<'a> {
-    /// Scan for the remaining values, starting at `offset`.
-    Scan { offset: usize, started: bool },
-    /// Stored value offsets (after key) from the beginning of the buffer.
-    IndexOffsets { offsets: &'a [u32], index: usize },
-}
-
-impl<'a, T> RepeatedIter<'a, T> {
-    /// Create a new [`RepeatedIter`].
-    fn new(buf: bytes::Bytes, tag_num: u32, count: usize, mode: RepeatedIterMode<'a>) -> Self {
+impl<T> RepeatedDecodeIter<'_, T> {
+    /// Create a new [`RepeatedDecodeIter`].
+    fn new(buf: bytes::Bytes, tag_num: u32, count: usize, min_offset: usize) -> Self {
         Self {
             buf,
             tag_num,
             remaining: count,
-            mode,
+            offset: min_offset,
+            started: false,
             _marker: core::marker::PhantomData,
         }
     }
 }
 
-impl<'a, T: ProtoDecode + Default> Iterator for RepeatedIter<'a, T> {
+impl<T: ProtoDecode + Default> Iterator for RepeatedDecodeIter<'_, T> {
     type Item = Result<T, DecodeErrorKind>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -258,24 +374,13 @@ impl<'a, T: ProtoDecode + Default> Iterator for RepeatedIter<'a, T> {
         }
 
         // Find the byte offset positioned right after the key (value offset).
-        let value_offset = match &mut self.mode {
-            // We have stored value offsets, jump directly to the value.
-            RepeatedIterMode::IndexOffsets { offsets, index } => {
-                let offset = *offsets.get(*index)? as usize;
-                *index += 1;
-                offset
-            }
-            // Start scanning from the first element.
-            RepeatedIterMode::Scan { offset, started } => {
-                // First offset points directly to a value, so we can return the offset.
-                if !*started {
-                    *started = true;
-                    *offset
-                } else {
-                    // Otherwise we must scan for the next key.
-                    Self::scan_for_field(&self.buf, self.tag_num, offset)?
-                }
-            }
+        let value_offset = if !self.started {
+            // First offset points directly to a value.
+            self.started = true;
+            self.offset
+        } else {
+            // Scan for the next key.
+            Self::scan_for_field(&self.buf, self.tag_num, &mut self.offset)?
         };
 
         self.remaining = self.remaining.saturating_sub(1);
@@ -287,9 +392,7 @@ impl<'a, T: ProtoDecode + Default> Iterator for RepeatedIter<'a, T> {
         let after_value = self.buf.len() - slice.len();
 
         // Update offset to point past this field (for next scan)
-        if let RepeatedIterMode::Scan { offset, .. } = &mut self.mode {
-            *offset = after_value;
-        }
+        self.offset = after_value;
 
         Some(result.map(|()| value))
     }
@@ -299,7 +402,7 @@ impl<'a, T: ProtoDecode + Default> Iterator for RepeatedIter<'a, T> {
     }
 }
 
-impl<'a, T: ProtoDecode + Default> RepeatedIter<'a, T> {
+impl<T: ProtoDecode + Default> RepeatedDecodeIter<'_, T> {
     /// Scan through buffer starting at byte_offset to find next matching field.
     fn scan_for_field(buf: &bytes::Bytes, tag_num: u32, byte_offset: &mut usize) -> Option<usize> {
         use crate::wire::{decode_key, skip_field};
@@ -333,120 +436,76 @@ impl<'a, T: ProtoDecode + Default> RepeatedIter<'a, T> {
     }
 }
 
-impl<'a, T: ProtoDecode + Default> ExactSizeIterator for RepeatedIter<'a, T> {}
+impl<T: ProtoDecode + Default> ExactSizeIterator for RepeatedDecodeIter<'_, T> {}
 
-/// Storage for recording the repeated fields we see during deserialization.
-///
-/// When deserializing a message we must visit every field. We can skip
-/// deserializing the instance of the field, but we must iterate to find all
-/// the _other_ fields in the message. To later aid deserialization of these
-/// repeated values, we store some metadata about them.
-///
-/// For minimal-allocation deserialization, use [`BasicStorage`] which stores
-/// just the count and minimum offset. Alternatively [`Vec<u32>`] and [`SmallVec`]
-/// implement [`RepeatedStorage`], and they maintain offsets for each value.
-///
-/// [`SmallVec`]: [`smallvec::SmallVec`].
-pub trait RepeatedStorage: Default + Clone {
-    /// Record a repeated field occurrence at the given byte offset.
-    fn merge_into(&mut self, offset: u32);
-
-    /// Returns the number of elements.
-    fn count(&self) -> usize;
-
-    /// Returns the stored offsets, if available.
-    /// Returns `None` for count-only storage.
-    fn offsets(&self) -> Option<&[u32]>;
-
-    /// Returns the minimum value offset seen, for scan mode optimization.
-    /// Since this is a value offset (after the key), it's never 0.
-    fn min_offset(&self) -> Option<NonZeroU32>;
+impl<T: ProtoType> ProtoType for Vec<T> {
+    const WIRE_TYPE: WireType = T::WIRE_TYPE;
 }
 
-/// Zero allocation storage for repeated fields.
-///
-/// This stores the number of values for a repeated field, and the offset of
-/// the first value. The idea here is most protobuf implementations will encode
-/// the values of a repeated field one after another. So by storing the first
-/// offset we can very quickly jump to where all of the values are in memory.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct BasicStorage {
-    /// Number of repeated field occurrences.
-    count: u32,
-    /// Minimum value offset seen (after key). Never 0 since there's always a key.
-    min_offset: Option<NonZeroU32>,
-}
-
-impl RepeatedStorage for BasicStorage {
+impl<T: ProtoDecode + Default> ProtoDecode for Vec<T> {
     #[inline]
-    fn merge_into(&mut self, offset: u32) {
-        // Value offsets are always > 0 (there's at least a key before the value)
-        let offset = NonZeroU32::new(offset).expect("value offset cannot be 0");
-        self.min_offset = Some(match self.min_offset {
-            Some(current) => current.min(offset),
-            None => offset,
-        });
-        self.count += 1;
+    fn init<B: bytes::Buf>(_msg_buf: B, _tag: u32) -> Self {
+        Vec::new()
     }
 
+    /// Decode a single occurrence of a repeated field and push to the Vec.
     #[inline]
-    fn count(&self) -> usize {
-        self.count as usize
-    }
-
-    #[inline]
-    fn offsets(&self) -> Option<&[u32]> {
-        None
-    }
-
-    #[inline]
-    fn min_offset(&self) -> Option<NonZeroU32> {
-        self.min_offset
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
+        let mut value = T::default();
+        T::decode_into(buf, &mut value, offset)?;
+        dst.push(value);
+        Ok(())
     }
 }
 
-impl RepeatedStorage for Vec<u32> {
-    #[inline]
-    fn merge_into(&mut self, offset: u32) {
-        self.push(offset);
+impl<T: ProtoType + ProtoEncode> ProtoEncode for Vec<T> {
+    /// Encode all values without field keys.
+    ///
+    /// The derive macro handles key encoding for each element.
+    fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+        for value in self {
+            value.encode(buf);
+        }
     }
 
-    #[inline]
-    fn count(&self) -> usize {
-        self.len()
-    }
-
-    #[inline]
-    fn offsets(&self) -> Option<&[u32]> {
-        Some(self.as_slice())
-    }
-
-    #[inline]
-    fn min_offset(&self) -> Option<NonZeroU32> {
-        self.first().and_then(|&v| NonZeroU32::new(v))
+    /// Returns the encoded length of all values (not including field keys).
+    fn encoded_len(&self) -> usize {
+        self.iter().map(|v| v.encoded_len()).sum()
     }
 }
 
-#[cfg(feature = "smallvec")]
-impl<const N: usize> RepeatedStorage for smallvec::SmallVec<[u32; N]> {
-    #[inline]
-    fn merge_into(&mut self, offset: u32) {
-        self.push(offset);
+/// Object-safe trait for cloneable, exact-size iterators.
+///
+/// This trait allows storing iterators in a `Box<dyn CloneableIterator<T>>` while
+/// still being able to clone them (via `clone_box`) and get their length.
+/// This is needed because `Clone` and `ExactSizeIterator` are not object-safe.
+pub trait CloneableIterator<T>: Iterator<Item = T> {
+    /// Clone this iterator into a new boxed iterator.
+    fn clone_box(&self) -> Box<dyn CloneableIterator<T>>;
+
+    /// Returns the exact remaining length of the iterator.
+    fn len(&self) -> usize;
+
+    /// Returns true if the iterator has no more elements.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl<T, I> CloneableIterator<T> for I
+where
+    I: Iterator<Item = T> + ExactSizeIterator + Clone + 'static,
+{
+    fn clone_box(&self) -> Box<dyn CloneableIterator<T>> {
+        Box::new(self.clone())
     }
 
-    #[inline]
-    fn count(&self) -> usize {
-        self.len()
-    }
-
-    #[inline]
-    fn offsets(&self) -> Option<&[u32]> {
-        Some(self.as_slice())
-    }
-
-    #[inline]
-    fn min_offset(&self) -> Option<NonZeroU32> {
-        self.first().and_then(|&v| NonZeroU32::new(v))
+    fn len(&self) -> usize {
+        ExactSizeIterator::len(self)
     }
 }
 
@@ -518,16 +577,16 @@ mod tests {
     }
 
     #[test]
-    fn test_repeated_basic_storage() {
+    fn test_repeated_decode() {
         use crate::wire::decode_key;
         use bytes::Buf;
 
         let buf = build_test_message();
         let bytes_buf = bytes::Bytes::from(buf);
 
-        // Simulate decoding with BasicStorage using ProtoDecode
-        let mut repeated: Repeated<ProtoString, BasicStorage> =
-            <Repeated<ProtoString, BasicStorage> as ProtoDecode>::init(bytes_buf.clone(), 2);
+        // Simulate decoding using ProtoDecode
+        let mut repeated: Repeated<ProtoString> =
+            <Repeated<ProtoString> as ProtoDecode>::init(bytes_buf.clone(), 2);
         let mut slice = &bytes_buf[..];
 
         while slice.has_remaining() {
@@ -537,7 +596,7 @@ mod tests {
 
             if tag == 2 {
                 // Use decode_into - it records offset and skips the field
-                <Repeated<ProtoString, BasicStorage> as ProtoDecode>::decode_into(
+                <Repeated<ProtoString> as ProtoDecode>::decode_into(
                     &mut slice,
                     &mut repeated,
                     value_offset,
@@ -550,50 +609,6 @@ mod tests {
 
         assert_eq!(repeated.len(), 3);
         assert!(!repeated.is_empty());
-
-        let strings: Vec<String> = repeated
-            .iter()
-            .map(|r| r.unwrap().as_str().to_string())
-            .collect();
-        assert_eq!(strings, vec!["hello", "world", "!"]);
-    }
-
-    #[test]
-    fn test_repeated_with_offsets() {
-        use crate::wire::decode_key;
-        use bytes::Buf;
-
-        let buf = build_test_message();
-        let bytes_buf = bytes::Bytes::from(buf);
-
-        // Simulate decoding with offset storage using ProtoDecode
-        let mut repeated: Repeated<ProtoString, Vec<u32>> =
-            <Repeated<ProtoString, Vec<u32>> as ProtoDecode>::init(bytes_buf.clone(), 2);
-        let mut slice = &bytes_buf[..];
-
-        while slice.has_remaining() {
-            let (wire_type, tag) = decode_key(&mut slice).unwrap();
-            // Value offset is now (after key decode)
-            let value_offset = bytes_buf.len() - slice.len();
-
-            if tag == 2 {
-                // Use decode_into - it records offset and skips the field
-                <Repeated<ProtoString, Vec<u32>> as ProtoDecode>::decode_into(
-                    &mut slice,
-                    &mut repeated,
-                    value_offset,
-                )
-                .unwrap();
-            } else {
-                crate::wire::skip_field(wire_type, &mut slice).unwrap();
-            }
-        }
-
-        assert_eq!(repeated.len(), 3);
-
-        // Check ExactSizeIterator
-        let iter = repeated.iter();
-        assert_eq!(iter.len(), 3);
 
         let strings: Vec<String> = repeated
             .iter()
@@ -618,8 +633,8 @@ mod tests {
         let bytes_buf = bytes::Bytes::from(buf);
 
         // Decode the repeated field
-        let mut repeated: Repeated<ProtoString, BasicStorage> =
-            <Repeated<ProtoString, BasicStorage> as ProtoDecode>::init(bytes_buf.clone(), 2);
+        let mut repeated: Repeated<ProtoString> =
+            <Repeated<ProtoString> as ProtoDecode>::init(bytes_buf.clone(), 2);
         let mut slice = &bytes_buf[..];
 
         while slice.has_remaining() {
@@ -627,7 +642,7 @@ mod tests {
             let value_offset = bytes_buf.len() - slice.len();
 
             if tag == 2 {
-                <Repeated<ProtoString, BasicStorage> as ProtoDecode>::decode_into(
+                <Repeated<ProtoString> as ProtoDecode>::decode_into(
                     &mut slice,
                     &mut repeated,
                     value_offset,
@@ -638,23 +653,18 @@ mod tests {
             }
         }
 
-        // Now encode it back
+        // Now encode it back (values only, no keys - derive macro handles keys)
         let mut encoded = Vec::new();
         repeated.encode(&mut encoded);
 
         // Verify encoded_len matches
         assert_eq!(encoded.len(), repeated.encoded_len());
 
-        // Decode the encoded buffer and verify we get the same strings
-        let encoded_bytes = bytes::Bytes::from(encoded);
+        // Decode the encoded buffer directly (no keys expected)
         let mut decoded_strings = Vec::new();
-        let mut slice = &encoded_bytes[..];
+        let mut slice = &encoded[..];
 
         while slice.has_remaining() {
-            let (wire_type, tag) = decode_key(&mut slice).unwrap();
-            assert_eq!(tag, 2);
-            assert_eq!(wire_type, WireType::Len);
-
             let mut s = ProtoString::default();
             ProtoString::decode_into(&mut slice, &mut s, 0).unwrap();
             decoded_strings.push(s.as_str().to_string());
@@ -665,13 +675,79 @@ mod tests {
 
     #[test]
     fn test_repeated_encode_empty() {
-        let repeated: Repeated<ProtoString, BasicStorage> =
-            <Repeated<ProtoString, BasicStorage> as ProtoDecode>::init(bytes::Bytes::new(), 1);
+        let repeated: Repeated<ProtoString> =
+            <Repeated<ProtoString> as ProtoDecode>::init(bytes::Bytes::new(), 1);
 
         assert_eq!(repeated.encoded_len(), 0);
 
         let mut encoded = Vec::new();
         repeated.encode(&mut encoded);
         assert!(encoded.is_empty());
+    }
+
+    #[test]
+    fn test_repeated_owned_encode() {
+        use bytes::Buf;
+
+        // Create an Owned repeated field from a vector
+        let values = vec![1i32, 2, 3, 4, 5];
+        let repeated: Repeated<i32> = Repeated::owned(values.clone().into_iter());
+
+        // Test len() and is_empty()
+        assert_eq!(repeated.len(), 5);
+        assert!(!repeated.is_empty());
+
+        // Test iter() returns the values (wrapped in Ok)
+        let collected: Vec<i32> = repeated.iter().map(|r| r.unwrap()).collect();
+        assert_eq!(collected, values);
+
+        // Test encode (now encodes values only, no keys)
+        let mut encoded = Vec::new();
+        repeated.encode(&mut encoded);
+
+        // Verify encoded_len matches
+        assert_eq!(encoded.len(), repeated.encoded_len());
+
+        // Decode the values directly (no keys)
+        let mut decoded_values = Vec::new();
+        let mut slice = &encoded[..];
+
+        while slice.has_remaining() {
+            let mut value = 0i32;
+            i32::decode_into(&mut slice, &mut value, 0).unwrap();
+            decoded_values.push(value);
+        }
+
+        assert_eq!(decoded_values, values);
+    }
+
+    #[test]
+    fn test_repeated_owned_empty() {
+        let repeated: Repeated<i32> = Repeated::owned(std::iter::empty());
+
+        assert_eq!(repeated.len(), 0);
+        assert!(repeated.is_empty());
+        assert_eq!(repeated.encoded_len(), 0);
+
+        let mut encoded = Vec::new();
+        repeated.encode(&mut encoded);
+        assert!(encoded.is_empty());
+    }
+
+    #[test]
+    fn test_repeated_owned_clone() {
+        let values = vec![10i32, 20, 30];
+        let repeated: Repeated<i32> = Repeated::owned(values.clone().into_iter());
+
+        // Clone the repeated field
+        let cloned = repeated.clone();
+
+        // Both should encode identically (values only, no keys)
+        let mut encoded1 = Vec::new();
+        let mut encoded2 = Vec::new();
+        repeated.encode(&mut encoded1);
+        cloned.encode(&mut encoded2);
+
+        assert_eq!(encoded1, encoded2);
     }
 }

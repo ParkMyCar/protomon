@@ -225,9 +225,8 @@ fn main() {
     println!("  phones_len: {}", person.phones_len());
 
     // Iterate over phones (lazy decoding)
-    for (i, phone_result) in person.phones().enumerate() {
-        let lazy_phone = phone_result.unwrap();
-        let phone = lazy_phone.decode().unwrap();
+    for (i, lazy_phone_result) in person.phones().enumerate() {
+        let phone = lazy_phone_result.unwrap().decode().unwrap();
         println!(
             "  phone[{}]: {} (type={})",
             i,

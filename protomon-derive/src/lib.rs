@@ -45,6 +45,30 @@ struct FieldInfo<'a> {
     optional: bool,
 }
 
+/// Extract the inner type from a generic type like `Vec<T>` or `Repeated<T>`.
+fn get_inner_type(ty: &Type) -> Option<&Type> {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                    return Some(inner);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Check if a type is `Vec<...>`.
+fn is_vec_type(ty: &Type) -> bool {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            return segment.ident == "Vec";
+        }
+    }
+    false
+}
+
 fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
     let name = &input.ident;
 
@@ -170,9 +194,27 @@ fn generate_encode(fields: &[FieldInfo]) -> TokenStream2 {
         let tag = f.tag;
 
         if f.repeated {
-            // Repeated fields handle their own keys in encode()
-            quote! {
-                <#fty as protomon::codec::ProtoEncode>::encode(&self.#fname, buf);
+            let inner_ty = get_inner_type(fty);
+            // Vec<T> iteration yields &T, Repeated<T> iteration yields Result<T, _>
+            if is_vec_type(fty) {
+                // Vec<T>: for value in &self.vec yields &T
+                quote! {
+                    for value in &self.#fname {
+                        protomon::wire::encode_key(<#inner_ty as protomon::codec::ProtoType>::WIRE_TYPE, #tag, buf);
+                        protomon::codec::ProtoEncode::encode(value, buf);
+                    }
+                }
+            } else {
+                // Repeated<T>: for result in &self.repeated yields Result<T, _>
+                // Skip errors during encoding
+                quote! {
+                    for result in &self.#fname {
+                        if let Ok(value) = result {
+                            protomon::wire::encode_key(<#inner_ty as protomon::codec::ProtoType>::WIRE_TYPE, #tag, buf);
+                            protomon::codec::ProtoEncode::encode(&value, buf);
+                        }
+                    }
+                }
             }
         } else if f.optional {
             // Optional fields only encode if Some
@@ -207,9 +249,26 @@ fn generate_len(fields: &[FieldInfo]) -> TokenStream2 {
         let tag = f.tag;
 
         if f.repeated {
-            // Repeated fields include keys in their encoded_len()
-            quote! {
-                len += <#fty as protomon::codec::ProtoEncode>::encoded_len(&self.#fname);
+            // Vec<T> iteration yields &T, Repeated<T> iteration yields Result<T, _>
+            if is_vec_type(fty) {
+                // Vec<T>: for value in &self.vec yields &T
+                quote! {
+                    let key_len = protomon::wire::encoded_key_len(#tag);
+                    for value in &self.#fname {
+                        len += key_len + protomon::codec::ProtoEncode::encoded_len(value);
+                    }
+                }
+            } else {
+                // Repeated<T>: for result in &self.repeated yields Result<T, _>
+                // Skip errors during length calculation
+                quote! {
+                    let key_len = protomon::wire::encoded_key_len(#tag);
+                    for result in &self.#fname {
+                        if let Ok(value) = result {
+                            len += key_len + protomon::codec::ProtoEncode::encoded_len(&value);
+                        }
+                    }
+                }
             }
         } else if f.optional {
             // Optional fields only count if Some
