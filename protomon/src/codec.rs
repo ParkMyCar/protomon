@@ -2,6 +2,7 @@
 
 mod delimited;
 mod message;
+mod optional;
 mod repeated;
 mod scalar;
 

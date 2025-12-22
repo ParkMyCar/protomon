@@ -18,7 +18,9 @@ use syn::{DeriveInput, Field, Ident, Result, Type};
 ///     name: ProtoString,
 ///     #[proto(tag = 2)]
 ///     id: i32,
-///     #[proto(tag = 3, repeated)]
+///     #[proto(tag = 3, optional)]
+///     email: Option<ProtoString>,
+///     #[proto(tag = 4, repeated)]
 ///     phones: Repeated<LazyMessage<PhoneNumber>>,
 /// }
 /// ```
@@ -40,6 +42,7 @@ struct FieldInfo<'a> {
     ty: &'a Type,
     tag: u32,
     repeated: bool,
+    optional: bool,
 }
 
 fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
@@ -56,12 +59,13 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
     let field_info: Vec<FieldInfo> = fields
         .iter()
         .map(|f| {
-            let (tag, repeated) = parse_proto_attrs(f)?;
+            let (tag, repeated, optional) = parse_proto_attrs(f)?;
             Ok(FieldInfo {
                 name: f.ident.as_ref().unwrap(),
                 ty: &f.ty,
                 tag,
                 repeated,
+                optional,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -79,10 +83,11 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
     })
 }
 
-/// Parse #[proto(tag = N, repeated)] attributes.
-fn parse_proto_attrs(field: &Field) -> Result<(u32, bool)> {
+/// Parse #[proto(tag = N, repeated, optional)] attributes.
+fn parse_proto_attrs(field: &Field) -> Result<(u32, bool, bool)> {
     let mut tag = None;
     let mut repeated = false;
+    let mut optional = false;
 
     for attr in &field.attrs {
         if attr.path().is_ident("proto") {
@@ -92,6 +97,8 @@ fn parse_proto_attrs(field: &Field) -> Result<(u32, bool)> {
                     tag = Some(value.base10_parse::<u32>()?);
                 } else if meta.path.is_ident("repeated") {
                     repeated = true;
+                } else if meta.path.is_ident("optional") {
+                    optional = true;
                 }
                 Ok(())
             })?;
@@ -99,7 +106,7 @@ fn parse_proto_attrs(field: &Field) -> Result<(u32, bool)> {
     }
 
     match tag {
-        Some(t) => Ok((t, repeated)),
+        Some(t) => Ok((t, repeated, optional)),
         None => Err(syn::Error::new_spanned(
             field,
             "missing #[proto(tag = N)] attribute",
@@ -167,10 +174,21 @@ fn generate_encode(fields: &[FieldInfo]) -> TokenStream2 {
             quote! {
                 <#fty as protomon::codec::ProtoEncode>::encode(&self.#fname, buf);
             }
-        } else {
+        } else if f.optional {
+            // Optional fields only encode if Some
             quote! {
-                protomon::wire::encode_key(<#fty as protomon::codec::ProtoType>::WIRE_TYPE, #tag, buf);
-                <#fty as protomon::codec::ProtoEncode>::encode(&self.#fname, buf);
+                if let Some(ref value) = self.#fname {
+                    protomon::wire::encode_key(<#fty as protomon::codec::ProtoType>::WIRE_TYPE, #tag, buf);
+                    protomon::codec::ProtoEncode::encode(value, buf);
+                }
+            }
+        } else {
+            // Regular fields only encode if not default (proto3 semantics)
+            quote! {
+                if self.#fname != <#fty as Default>::default() {
+                    protomon::wire::encode_key(<#fty as protomon::codec::ProtoType>::WIRE_TYPE, #tag, buf);
+                    <#fty as protomon::codec::ProtoEncode>::encode(&self.#fname, buf);
+                }
             }
         }
     });
@@ -193,9 +211,19 @@ fn generate_len(fields: &[FieldInfo]) -> TokenStream2 {
             quote! {
                 len += <#fty as protomon::codec::ProtoEncode>::encoded_len(&self.#fname);
             }
-        } else {
+        } else if f.optional {
+            // Optional fields only count if Some
             quote! {
-                len += protomon::wire::encoded_key_len(#tag) + <#fty as protomon::codec::ProtoEncode>::encoded_len(&self.#fname);
+                if let Some(ref value) = self.#fname {
+                    len += protomon::wire::encoded_key_len(#tag) + protomon::codec::ProtoEncode::encoded_len(value);
+                }
+            }
+        } else {
+            // Regular fields only count if not default (proto3 semantics)
+            quote! {
+                if self.#fname != <#fty as Default>::default() {
+                    len += protomon::wire::encoded_key_len(#tag) + <#fty as protomon::codec::ProtoEncode>::encoded_len(&self.#fname);
+                }
             }
         }
     });
