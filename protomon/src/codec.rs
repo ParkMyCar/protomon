@@ -20,21 +20,13 @@ pub trait ProtoType: Sized {
 /// - Scalars: last value wins (overwrite)
 /// - Embedded messages: recursive merge
 /// - Repeated fields: append
-pub trait ProtoDecode: ProtoType {
-    /// Initialize an empty instance of `Self` for decoding.
-    ///
-    /// # Parameters
-    /// - `msg_buf`: Buffer for the entire message. Most implementations ignore this,
-    ///   but types like `Repeated` use it for lazy iteration.
-    /// - `tag`: The field tag number. Most implementations ignore this, but types
-    ///   like `Repeated` use it for scan mode iteration.
-    fn init<B: bytes::Buf>(msg_buf: B, tag: u32) -> Self;
-
+pub trait ProtoDecode: ProtoType + Default {
     /// Decode from buffer into dst, following protobuf merging semantics.
     ///
-    /// The `offset` parameter is the byte offset within the original message buffer
-    /// where this value starts. This is used by types like `Repeated` that need to
-    /// track value positions for lazy iteration.
+    /// # Parameters
+    /// - `buf`: The buffer to decode from (positioned at the value, after the key).
+    /// - `dst`: The destination to decode into.
+    /// - `offset`: Byte offset of this value in the message buffer.
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,
         dst: &mut Self,

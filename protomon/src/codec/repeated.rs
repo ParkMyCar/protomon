@@ -5,12 +5,18 @@ use crate::error::DecodeErrorKind;
 use crate::wire::{self, WireType};
 use core::num::NonZeroU32;
 
-/// Trait for encoding repeated protobuf fields.
+/// Trait for repeated protobuf fields.
 ///
-/// This trait provides a unified interface for encoding repeated fields,
+/// This trait provides a unified interface for repeated fields,
 /// whether they are stored as `Vec<T>` or `Repeated<T>`. The derive macro
-/// uses this trait to encode repeated fields uniformly.
-pub trait ProtoRepeated {
+/// uses this trait to handle repeated fields uniformly.
+pub trait ProtoRepeated: Default {
+    /// Initialize for decoding with the message buffer and field tag.
+    ///
+    /// This must be called before `decode_into` for types that need the
+    /// buffer/tag context (like `Repeated`). For `Vec`, this is a no-op.
+    fn init_repeated(&mut self, msg_buf: bytes::Bytes, tag: u32);
+
     /// Encode all elements with their field keys to the buffer.
     fn encode_repeated<B: bytes::BufMut>(&self, tag: u32, buf: &mut B);
 
@@ -139,6 +145,21 @@ impl<T: 'static> Clone for Repeated<T> {
     }
 }
 
+impl<T: 'static> std::fmt::Debug for Repeated<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Lazy { count, .. } => f
+                .debug_struct("Repeated::Lazy")
+                .field("len", count)
+                .finish(),
+            Self::Owned { iter } => f
+                .debug_struct("Repeated::Owned")
+                .field("len", &iter.len())
+                .finish(),
+        }
+    }
+}
+
 impl<T: 'static> Repeated<T> {
     /// Create a new empty Lazy repeated field wrapper.
     pub fn lazy(buf: bytes::Bytes, tag_num: u32) -> Self {
@@ -232,6 +253,19 @@ impl<'a, T: ProtoDecode + Default + 'static> IntoIterator for &'a Repeated<T> {
     }
 }
 
+impl<T: 'static> Default for Repeated<T> {
+    fn default() -> Self {
+        Self::Lazy {
+            buf: bytes::Bytes::new(),
+            tag_num: 0,
+            count: 0,
+            min_offset: None,
+            values_len: 0,
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
 impl<T: ProtoType + 'static> ProtoType for Repeated<T> {
     // Use the element type's wire type.
     //
@@ -240,25 +274,13 @@ impl<T: ProtoType + 'static> ProtoType for Repeated<T> {
 }
 
 impl<T: ProtoType + 'static> ProtoDecode for Repeated<T> {
-    #[inline]
-    fn init<B: bytes::Buf>(msg_buf: B, tag: u32) -> Self {
-        Self::Lazy {
-            buf: bytes::Bytes::copy_from_slice(msg_buf.chunk()),
-            tag_num: tag,
-            count: 0,
-            min_offset: None,
-            values_len: 0,
-            _marker: core::marker::PhantomData,
-        }
-    }
-
     /// Decode a single occurrence of a repeated field.
     ///
     /// Records the value offset and skips over the value in the buffer.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if called on an `Owned` variant.
+    /// Panics if `init_repeated` was not called first (i.e., if the buffer is empty).
     #[inline]
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,
@@ -266,6 +288,7 @@ impl<T: ProtoType + 'static> ProtoDecode for Repeated<T> {
         offset: usize,
     ) -> Result<(), DecodeErrorKind> {
         let Self::Lazy {
+            buf: msg_buf,
             count,
             min_offset,
             values_len,
@@ -276,6 +299,13 @@ impl<T: ProtoType + 'static> ProtoDecode for Repeated<T> {
                 reason: "decode_into is not supported on Owned variant",
             });
         };
+
+        // Check that init_repeated was called
+        if msg_buf.is_empty() {
+            return Err(DecodeErrorKind::ProgrammingError {
+                reason: "Repeated::init_repeated must be called before decode_into",
+            });
+        }
 
         let before = buf.remaining();
         crate::wire::skip_field(T::WIRE_TYPE, buf)?;
@@ -319,6 +349,18 @@ impl<T: ProtoType + ProtoEncode + ProtoDecode + Default + 'static> ProtoEncode f
 }
 
 impl<T: ProtoType + ProtoEncode + ProtoDecode + Default + 'static> ProtoRepeated for Repeated<T> {
+    /// Initialize for decoding with the message buffer and field tag.
+    fn init_repeated(&mut self, msg_buf: bytes::Bytes, tag: u32) {
+        *self = Self::Lazy {
+            buf: msg_buf,
+            tag_num: tag,
+            count: 0,
+            min_offset: None,
+            values_len: 0,
+            _marker: core::marker::PhantomData,
+        };
+    }
+
     /// Encode all elements with their field keys.
     fn encode_repeated<B: bytes::BufMut>(&self, tag: u32, buf: &mut B) {
         for result in self.iter() {
@@ -339,10 +381,7 @@ impl<T: ProtoType + ProtoEncode + ProtoDecode + Default + 'static> ProtoRepeated
             // For Lazy, we tracked values_len during decode
             Self::Lazy { values_len, .. } => count * key_len + *values_len as usize,
             // For Owned, we must iterate and sum
-            Self::Owned { iter } => iter
-                .clone_box()
-                .map(|v| key_len + v.encoded_len())
-                .sum(),
+            Self::Owned { iter } => iter.clone_box().map(|v| key_len + v.encoded_len()).sum(),
         }
     }
 
@@ -496,12 +535,7 @@ impl<T: ProtoType> ProtoType for Vec<T> {
     const WIRE_TYPE: WireType = T::WIRE_TYPE;
 }
 
-impl<T: ProtoDecode + Default> ProtoDecode for Vec<T> {
-    #[inline]
-    fn init<B: bytes::Buf>(_msg_buf: B, _tag: u32) -> Self {
-        Vec::new()
-    }
-
+impl<T: ProtoDecode> ProtoDecode for Vec<T> {
     /// Decode a single occurrence of a repeated field and push to the Vec.
     #[inline]
     fn decode_into<B: bytes::Buf>(
@@ -533,6 +567,12 @@ impl<T: ProtoType + ProtoEncode> ProtoEncode for Vec<T> {
 }
 
 impl<T: ProtoType + ProtoEncode> ProtoRepeated for Vec<T> {
+    /// No-op for Vec - it doesn't need buffer/tag context.
+    #[inline]
+    fn init_repeated(&mut self, _msg_buf: bytes::Bytes, _tag: u32) {
+        // Vec doesn't need initialization context
+    }
+
     fn encode_repeated<B: bytes::BufMut>(&self, tag: u32, buf: &mut B) {
         for value in self {
             wire::encode_key(T::WIRE_TYPE, tag, buf);
@@ -545,9 +585,7 @@ impl<T: ProtoType + ProtoEncode> ProtoRepeated for Vec<T> {
             return 0;
         }
         let key_len = wire::encoded_key_len(tag);
-        self.iter()
-            .map(|v| key_len + v.encoded_len())
-            .sum()
+        self.iter().map(|v| key_len + v.encoded_len()).sum()
     }
 
     fn repeated_len(&self) -> usize {
@@ -661,9 +699,9 @@ mod tests {
         let buf = build_test_message();
         let bytes_buf = bytes::Bytes::from(buf);
 
-        // Simulate decoding using ProtoDecode
-        let mut repeated: Repeated<ProtoString> =
-            <Repeated<ProtoString> as ProtoDecode>::init(bytes_buf.clone(), 2);
+        // Simulate decoding using Default + init_repeated
+        let mut repeated: Repeated<ProtoString> = Repeated::default();
+        repeated.init_repeated(bytes_buf.clone(), 2);
         let mut slice = &bytes_buf[..];
 
         while slice.has_remaining() {
@@ -710,8 +748,8 @@ mod tests {
         let bytes_buf = bytes::Bytes::from(buf);
 
         // Decode the repeated field
-        let mut repeated: Repeated<ProtoString> =
-            <Repeated<ProtoString> as ProtoDecode>::init(bytes_buf.clone(), 2);
+        let mut repeated: Repeated<ProtoString> = Repeated::default();
+        repeated.init_repeated(bytes_buf.clone(), 2);
         let mut slice = &bytes_buf[..];
 
         while slice.has_remaining() {
@@ -752,8 +790,8 @@ mod tests {
 
     #[test]
     fn test_repeated_encode_empty() {
-        let repeated: Repeated<ProtoString> =
-            <Repeated<ProtoString> as ProtoDecode>::init(bytes::Bytes::new(), 1);
+        let mut repeated: Repeated<ProtoString> = Repeated::default();
+        repeated.init_repeated(bytes::Bytes::new(), 1);
 
         assert_eq!(repeated.encoded_len(), 0);
 

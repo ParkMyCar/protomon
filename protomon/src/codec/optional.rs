@@ -8,12 +8,7 @@ impl<T: ProtoType> ProtoType for Option<T> {
     const WIRE_TYPE: WireType = T::WIRE_TYPE;
 }
 
-impl<T: ProtoDecode + Default> ProtoDecode for Option<T> {
-    #[inline]
-    fn init<B: bytes::Buf>(_msg_buf: B, _tag: u32) -> Self {
-        None
-    }
-
+impl<T: ProtoDecode> ProtoDecode for Option<T> {
     #[inline]
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,
@@ -51,7 +46,7 @@ mod tests {
 
     #[test]
     fn test_option_none_default() {
-        let opt: Option<i32> = <Option<i32> as ProtoDecode>::init(&[][..], 1);
+        let opt: Option<i32> = Option::<i32>::default();
         assert!(opt.is_none());
     }
 
@@ -84,7 +79,7 @@ mod tests {
 
     #[test]
     fn test_option_string() {
-        let opt: Option<ProtoString> = <Option<ProtoString> as ProtoDecode>::init(&[][..], 1);
+        let opt: Option<ProtoString> = Option::<ProtoString>::default();
         assert!(opt.is_none());
 
         // Decode a string

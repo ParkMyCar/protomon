@@ -34,11 +34,6 @@ impl ProtoType for ProtoBytes {
 
 impl ProtoDecode for ProtoBytes {
     #[inline]
-    fn init<B: bytes::Buf>(_msg_buf: B, _tag: u32) -> Self {
-        ProtoBytes(bytes::Bytes::new())
-    }
-
-    #[inline]
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,
         dst: &mut Self,
@@ -115,11 +110,6 @@ impl ProtoType for ProtoString {
 
 impl ProtoDecode for ProtoString {
     #[inline]
-    fn init<B: bytes::Buf>(_msg_buf: B, _tag: u32) -> Self {
-        ProtoString(bytes::Bytes::new())
-    }
-
-    #[inline]
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,
         dst: &mut Self,
@@ -160,11 +150,6 @@ impl ProtoType for String {
 
 impl ProtoDecode for String {
     #[inline]
-    fn init<B: bytes::Buf>(_msg_buf: B, _tag: u32) -> Self {
-        String::new()
-    }
-
-    #[inline]
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,
         dst: &mut Self,
@@ -202,11 +187,6 @@ impl ProtoType for Vec<u8> {
 }
 
 impl ProtoDecode for Vec<u8> {
-    #[inline]
-    fn init<B: bytes::Buf>(_msg_buf: B, _tag: u32) -> Self {
-        Vec::new()
-    }
-
     #[inline]
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,

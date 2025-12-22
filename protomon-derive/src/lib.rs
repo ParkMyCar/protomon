@@ -74,11 +74,66 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
     let encode_impl = generate_encode(&field_info);
     let len_impl = generate_len(&field_info);
 
+    // Generate Default impl
+    let default_fields = field_info.iter().map(|f| {
+        let fname = f.name;
+        let fty = f.ty;
+        quote! {
+            #fname: <#fty as Default>::default()
+        }
+    });
+
     Ok(quote! {
+        impl Default for #name {
+            fn default() -> Self {
+                Self {
+                    #(#default_fields),*
+                }
+            }
+        }
+
+        impl protomon::codec::ProtoType for #name {
+            const WIRE_TYPE: protomon::wire::WireType = protomon::wire::WireType::Len;
+        }
+
         impl protomon::codec::ProtoMessage for #name {
             #decode_impl
             #encode_impl
             #len_impl
+        }
+
+        impl protomon::codec::ProtoDecode for #name {
+            #[inline]
+            fn decode_into<B: bytes::Buf>(
+                buf: &mut B,
+                dst: &mut Self,
+                _offset: usize,
+            ) -> Result<(), protomon::error::DecodeErrorKind> {
+                use bytes::Buf;
+                let len = protomon::wire::decode_len(buf)?;
+                if buf.remaining() < len {
+                    return Err(protomon::error::DecodeErrorKind::UnexpectedEndOfBuffer);
+                }
+                *dst = <Self as protomon::codec::ProtoMessage>::decode_message(buf.copy_to_bytes(len))?;
+                Ok(())
+            }
+        }
+
+        impl protomon::codec::ProtoEncode for #name {
+            #[inline]
+            fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+                use protomon::leb128::LebCodec;
+                let len = <Self as protomon::codec::ProtoMessage>::encoded_message_len(self);
+                (len as u64).encode_leb128(buf);
+                <Self as protomon::codec::ProtoMessage>::encode_message(self, buf);
+            }
+
+            #[inline]
+            fn encoded_len(&self) -> usize {
+                use protomon::leb128::LebCodec;
+                let len = <Self as protomon::codec::ProtoMessage>::encoded_message_len(self);
+                (len as u64).encoded_leb128_len() + len
+            }
         }
     })
 }
@@ -116,14 +171,23 @@ fn parse_proto_attrs(field: &Field) -> Result<(u32, bool, bool)> {
 
 
 fn generate_decode(name: &Ident, fields: &[FieldInfo]) -> TokenStream2 {
-    // Generate field initializations using ProtoDecode::init
+    // Generate field initializations
+    // - Repeated fields use Default + init_repeated
+    // - Other fields use Default
     let field_inits = fields.iter().map(|f| {
         let fname = f.name;
         let fty = f.ty;
         let tag = f.tag;
 
-        quote! {
-            let mut #fname: #fty = <#fty as protomon::codec::ProtoDecode>::init(buf.clone(), #tag);
+        if f.repeated {
+            quote! {
+                let mut #fname: #fty = <#fty as Default>::default();
+                protomon::codec::ProtoRepeated::init_repeated(&mut #fname, buf.clone(), #tag);
+            }
+        } else {
+            quote! {
+                let mut #fname: #fty = <#fty as Default>::default();
+            }
         }
     });
 

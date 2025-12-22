@@ -87,6 +87,19 @@ impl<T> LazyMessage<T> {
 }
 
 impl<T: ProtoMessage> LazyMessage<T> {
+    /// Create a lazy message by encoding a value.
+    ///
+    /// This allows constructing a `LazyMessage` from an owned value,
+    /// useful when you have `Vec<LazyMessage<T>>` or `Repeated<LazyMessage<T>>`
+    /// fields that need to be populated for encoding.
+    pub fn from_value(value: &T) -> Self {
+        let mut buf = Vec::with_capacity(value.encoded_message_len());
+        value.encode_message(&mut buf);
+        Self::new(bytes::Bytes::from(buf))
+    }
+}
+
+impl<T: ProtoMessage> LazyMessage<T> {
     /// Decode the message. Can be called multiple times.
     pub fn decode(&self) -> Result<T, DecodeErrorKind> {
         T::decode_message(self.buf.clone())
@@ -98,11 +111,6 @@ impl<T: ProtoMessage> ProtoType for LazyMessage<T> {
 }
 
 impl<T: ProtoMessage> ProtoDecode for LazyMessage<T> {
-    #[inline]
-    fn init<B: bytes::Buf>(_msg_buf: B, _tag: u32) -> Self {
-        LazyMessage::new(bytes::Bytes::new())
-    }
-
     /// Decodes the length prefix and stores the message bytes for lazy decoding.
     #[inline]
     fn decode_into<B: bytes::Buf>(buf: &mut B, dst: &mut Self, _offset: usize) -> Result<(), DecodeErrorKind> {
