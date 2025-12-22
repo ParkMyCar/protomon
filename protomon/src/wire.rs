@@ -19,6 +19,15 @@ pub fn encode_key<B: bytes::BufMut>(wire_type: WireType, tag: u32, buf: &mut B) 
     u32::encode_leb128(key, buf);
 }
 
+/// Returns the encoded length of a field key (tag + wire type).
+#[inline]
+pub fn encoded_key_len(tag: u32) -> usize {
+    // Wire type is 3 bits, so key = (tag << 3) | wire_type
+    // The wire type doesn't affect the length since it only uses 3 bits
+    let key = tag << 3;
+    key.encoded_leb128_len()
+}
+
 /// Decodes the key from a protobuf encoded message.
 ///
 /// Follows the specification from <https://protobuf.dev/programming-guides/encoding>

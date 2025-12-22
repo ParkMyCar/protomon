@@ -157,14 +157,18 @@ fn generate_decode(name: &Ident, fields: &[FieldInfo]) -> TokenStream2 {
 }
 
 fn generate_encode(fields: &[FieldInfo]) -> TokenStream2 {
-    // Filter out repeated fields - they can't be encoded in zero-copy design
-    let encode_fields = fields.iter().filter(|f| !f.repeated).map(|f| {
+    let encode_fields = fields.iter().map(|f| {
         let fname = f.name;
         let fty = f.ty;
         let tag = f.tag;
 
-        quote! {
-            if self.#fname != <#fty as protomon::codec::ProtoDecode>::init(bytes::Bytes::new(), #tag) {
+        if f.repeated {
+            // Repeated fields handle their own keys in encode()
+            quote! {
+                <#fty as protomon::codec::ProtoEncode>::encode(&self.#fname, buf);
+            }
+        } else {
+            quote! {
                 protomon::wire::encode_key(<#fty as protomon::codec::ProtoType>::WIRE_TYPE, #tag, buf);
                 <#fty as protomon::codec::ProtoEncode>::encode(&self.#fname, buf);
             }
@@ -173,29 +177,31 @@ fn generate_encode(fields: &[FieldInfo]) -> TokenStream2 {
 
     quote! {
         fn encode_message<B: bytes::BufMut>(&self, buf: &mut B) {
-            use protomon::codec::ProtoDecode;
             #(#encode_fields)*
         }
     }
 }
 
 fn generate_len(fields: &[FieldInfo]) -> TokenStream2 {
-    // Filter out repeated fields
-    let len_fields = fields.iter().filter(|f| !f.repeated).map(|f| {
+    let len_fields = fields.iter().map(|f| {
         let fname = f.name;
         let fty = f.ty;
         let tag = f.tag;
 
-        quote! {
-            if self.#fname != <#fty as protomon::codec::ProtoDecode>::init(bytes::Bytes::new(), #tag) {
-                len += 1 + <#fty as protomon::codec::ProtoEncode>::encoded_len(&self.#fname);
+        if f.repeated {
+            // Repeated fields include keys in their encoded_len()
+            quote! {
+                len += <#fty as protomon::codec::ProtoEncode>::encoded_len(&self.#fname);
+            }
+        } else {
+            quote! {
+                len += protomon::wire::encoded_key_len(#tag) + <#fty as protomon::codec::ProtoEncode>::encoded_len(&self.#fname);
             }
         }
     });
 
     quote! {
         fn encoded_message_len(&self) -> usize {
-            use protomon::codec::ProtoDecode;
             let mut len = 0usize;
             #(#len_fields)*
             len

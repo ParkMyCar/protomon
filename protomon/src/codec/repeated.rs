@@ -1,6 +1,6 @@
 //! Repeated field types and iterators.
 
-use super::{ProtoDecode, ProtoType};
+use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
 use crate::wire::WireType;
 use core::num::NonZeroU32;
@@ -83,6 +83,8 @@ pub struct Repeated<T, S: RepeatedStorage = BasicStorage> {
     tag_num: u32,
     /// Record of value offsets (after key) encountered during initial deserialization.
     storage: S,
+    /// Running sum of encoded value lengths (excluding keys).
+    values_len: u32,
 
     _marker: core::marker::PhantomData<T>,
 }
@@ -94,6 +96,7 @@ impl<T, S: RepeatedStorage> Repeated<T, S> {
             buf,
             tag_num,
             storage: S::default(),
+            values_len: 0,
             _marker: core::marker::PhantomData,
         }
     }
@@ -156,6 +159,7 @@ impl<T: ProtoType, S: RepeatedStorage> ProtoDecode for Repeated<T, S> {
             buf: bytes::Bytes::copy_from_slice(msg_buf.chunk()),
             tag_num: tag,
             storage: S::default(),
+            values_len: 0,
             _marker: core::marker::PhantomData,
         }
     }
@@ -169,8 +173,39 @@ impl<T: ProtoType, S: RepeatedStorage> ProtoDecode for Repeated<T, S> {
         dst: &mut Self,
         offset: usize,
     ) -> Result<(), DecodeErrorKind> {
+        let before = buf.remaining();
+        crate::wire::skip_field(T::WIRE_TYPE, buf)?;
+        let value_len = (before - buf.remaining()) as u32;
+
         dst.storage.merge_into(offset as u32);
-        crate::wire::skip_field(T::WIRE_TYPE, buf)
+        dst.values_len += value_len;
+        Ok(())
+    }
+}
+
+impl<T: ProtoType + ProtoEncode + ProtoDecode + Default, S: RepeatedStorage> ProtoEncode
+    for Repeated<T, S>
+{
+    fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+        use crate::wire::encode_key;
+
+        for item in self.iter() {
+            if let Ok(value) = item {
+                encode_key(T::WIRE_TYPE, self.tag_num, buf);
+                value.encode(buf);
+            }
+        }
+    }
+
+    fn encoded_len(&self) -> usize {
+        let count = self.storage.count();
+        if count == 0 {
+            return 0;
+        }
+
+        // Each element needs: <key (tag + wire_type as varint)><value>
+        let key_len = crate::wire::encoded_key_len(self.tag_num);
+        key_len * count + self.values_len as usize
     }
 }
 
@@ -572,5 +607,71 @@ mod tests {
             .map(|r| r.unwrap().as_str().to_string())
             .collect();
         assert_eq!(strings2, vec!["hello", "world", "!"]);
+    }
+
+    #[test]
+    fn test_repeated_encode() {
+        use crate::wire::decode_key;
+        use bytes::Buf;
+
+        let buf = build_test_message();
+        let bytes_buf = bytes::Bytes::from(buf);
+
+        // Decode the repeated field
+        let mut repeated: Repeated<ProtoString, BasicStorage> =
+            <Repeated<ProtoString, BasicStorage> as ProtoDecode>::init(bytes_buf.clone(), 2);
+        let mut slice = &bytes_buf[..];
+
+        while slice.has_remaining() {
+            let (wire_type, tag) = decode_key(&mut slice).unwrap();
+            let value_offset = bytes_buf.len() - slice.len();
+
+            if tag == 2 {
+                <Repeated<ProtoString, BasicStorage> as ProtoDecode>::decode_into(
+                    &mut slice,
+                    &mut repeated,
+                    value_offset,
+                )
+                .unwrap();
+            } else {
+                crate::wire::skip_field(wire_type, &mut slice).unwrap();
+            }
+        }
+
+        // Now encode it back
+        let mut encoded = Vec::new();
+        repeated.encode(&mut encoded);
+
+        // Verify encoded_len matches
+        assert_eq!(encoded.len(), repeated.encoded_len());
+
+        // Decode the encoded buffer and verify we get the same strings
+        let encoded_bytes = bytes::Bytes::from(encoded);
+        let mut decoded_strings = Vec::new();
+        let mut slice = &encoded_bytes[..];
+
+        while slice.has_remaining() {
+            let (wire_type, tag) = decode_key(&mut slice).unwrap();
+            assert_eq!(tag, 2);
+            assert_eq!(wire_type, WireType::Len);
+
+            let mut s = ProtoString::default();
+            ProtoString::decode_into(&mut slice, &mut s, 0).unwrap();
+            decoded_strings.push(s.as_str().to_string());
+        }
+
+        assert_eq!(decoded_strings, vec!["hello", "world", "!"]);
+    }
+
+    #[test]
+    fn test_repeated_encode_empty() {
+        let repeated: Repeated<ProtoString, BasicStorage> =
+            <Repeated<ProtoString, BasicStorage> as ProtoDecode>::init(bytes::Bytes::new(), 1);
+
+        assert_eq!(repeated.encoded_len(), 0);
+
+        let mut encoded = Vec::new();
+        repeated.encode(&mut encoded);
+        assert!(encoded.is_empty());
     }
 }
