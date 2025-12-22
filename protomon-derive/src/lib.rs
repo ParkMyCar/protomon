@@ -51,7 +51,12 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
     let fields = match &input.data {
         syn::Data::Struct(data) => match &data.fields {
             syn::Fields::Named(fields) => &fields.named,
-            _ => return Err(syn::Error::new_spanned(input, "only named fields supported")),
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    input,
+                    "only named fields supported",
+                ))
+            }
         },
         _ => return Err(syn::Error::new_spanned(input, "only structs supported")),
     };
@@ -168,7 +173,6 @@ fn parse_proto_attrs(field: &Field) -> Result<(u32, bool, bool)> {
         )),
     }
 }
-
 
 fn generate_decode(name: &Ident, fields: &[FieldInfo]) -> TokenStream2 {
     // Generate field initializations
