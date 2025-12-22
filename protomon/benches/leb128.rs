@@ -70,7 +70,7 @@ fn leb128_decoding_many(c: &mut Criterion) {
             b.iter(|| {
                 for (value, _len) in data {
                     let value = unsafe { u64::decode_leb128(&value[..]) };
-                    std::hint::black_box(value);
+                    let _a = std::hint::black_box(value);
                 }
             });
         },
@@ -82,7 +82,7 @@ fn leb128_decoding_many(c: &mut Criterion) {
             b.iter(|| {
                 for (value, _len) in data {
                     let value = unsafe { decode_u64_impl_a(value.as_ptr()) };
-                    std::hint::black_box(value);
+                    let _a = std::hint::black_box(value);
                 }
             });
         },

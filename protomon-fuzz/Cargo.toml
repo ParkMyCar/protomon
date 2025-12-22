@@ -1,0 +1,21 @@
+[package]
+name = "protomon-fuzz"
+version = "0.1.0"
+edition = "2021"
+description = "Fuzzing framework for protomon - generates random protobuf schemas"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+arbitrary = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+libfuzzer-sys = "0.4"
+insta = "1"
+
+[[bin]]
+name = "fuzz_schema"
+path = "src/bin/fuzz_schema.rs"
+required-features = ["fuzzing"]
+
+[features]
+fuzzing = []

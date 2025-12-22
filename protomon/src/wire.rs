@@ -40,7 +40,7 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
         buf.advance(bytes_read as usize);
         value
     } else {
-        u64::decode_leb128_buf(buf)?
+        u64::decode_leb128_buf(buf)?.0
     };
 
     // The first three bits of the key are the wire type.
@@ -51,6 +51,43 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
     let tag = value >> 3;
 
     Ok((wire_type, tag as u32))
+}
+
+/// Decodes the length prefix for a length-delimited field.
+#[inline]
+pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeErrorKind> {
+    let (len, _) = u64::decode_leb128_buf(buf)?;
+    Ok(len as usize)
+}
+
+/// Skips over a field value based on its wire type.
+///
+/// Protobuf supports backwards and fowards compatiblity by skipping fields
+/// we don't know about. We "skip" a field by advancing our buffer past it.
+#[inline]
+pub fn skip_field<B: bytes::Buf>(wire_type: WireType, buf: &mut B) -> Result<(), DecodeErrorKind> {
+    let skip_len = match wire_type {
+        WireType::Varint => {
+            // Read and discard the varint (decode_leb128_buf advances the buffer)
+            u64::decode_leb128_buf(buf)?;
+            return Ok(());
+        }
+        WireType::I64 => 8,
+        WireType::Len => {
+            let len = decode_len(buf)?;
+            len
+        }
+        WireType::I32 => 4,
+        WireType::SGroup | WireType::EGroup => {
+            return Err(DecodeErrorKind::DeprecatedGroupEncoding);
+        }
+    };
+
+    if buf.remaining() < skip_len {
+        return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+    }
+    buf.advance(skip_len);
+    Ok(())
 }
 
 /// Denotes the type of a field in an encoded protobuf message.
@@ -123,36 +160,6 @@ impl TryFrom<u8> for WireType {
     }
 }
 
-pub trait Decode {
-    type Target<'a>
-    where
-        Self: 'a;
-
-    fn decode_slice<'s>(s: &'s [u8]) -> Self::Target<'s>;
-}
-
-impl Decode for str {
-    type Target<'a>
-        = &'a str
-    where
-        Self: 'a;
-
-    fn decode_slice<'s>(s: &'s [u8]) -> Self::Target<'s> {
-        unsafe { std::str::from_utf8_unchecked(s) }
-    }
-}
-
-impl Decode for String {
-    type Target<'a>
-        = String
-    where
-        Self: 'a;
-
-    fn decode_slice<'s>(s: &'s [u8]) -> String {
-        unsafe { std::str::from_utf8_unchecked(s).to_string() }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use proptest::prelude::*;
@@ -160,7 +167,9 @@ mod test {
     use crate::wire::MINIMUM_TAG_VAL;
     use crate::wire::WireType;
     use crate::wire::decode_key;
+    use crate::wire::decode_len;
     use crate::wire::encode_key;
+    use crate::wire::skip_field;
 
     #[test]
     fn proptest_key_roundtrips() {
@@ -203,5 +212,70 @@ mod test {
                 other => panic!("unexpected value {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn test_decode_len() {
+        // Length 0
+        let mut buf = &[0u8][..];
+        assert_eq!(decode_len(&mut buf).unwrap(), 0);
+
+        // Length 127 (single byte)
+        let mut buf = &[127u8][..];
+        assert_eq!(decode_len(&mut buf).unwrap(), 127);
+
+        // Length 128 (two bytes)
+        let mut buf = &[0x80, 0x01][..];
+        assert_eq!(decode_len(&mut buf).unwrap(), 128);
+
+        // Length 300
+        let mut buf = &[0xAC, 0x02][..];
+        assert_eq!(decode_len(&mut buf).unwrap(), 300);
+    }
+
+    #[test]
+    fn test_skip_field_varint() {
+        // Skip a 1-byte varint
+        let mut buf = &[42u8, 99][..];
+        skip_field(WireType::Varint, &mut buf).unwrap();
+        assert_eq!(buf, &[99]);
+
+        // Skip a multi-byte varint
+        let mut buf = &[0x80, 0x01, 99][..];
+        skip_field(WireType::Varint, &mut buf).unwrap();
+        assert_eq!(buf, &[99]);
+    }
+
+    #[test]
+    fn test_skip_field_fixed() {
+        // Skip I32
+        let mut buf = &[1, 2, 3, 4, 99][..];
+        skip_field(WireType::I32, &mut buf).unwrap();
+        assert_eq!(buf, &[99]);
+
+        // Skip I64
+        let mut buf = &[1, 2, 3, 4, 5, 6, 7, 8, 99][..];
+        skip_field(WireType::I64, &mut buf).unwrap();
+        assert_eq!(buf, &[99]);
+    }
+
+    #[test]
+    fn test_skip_field_len() {
+        // Skip length-delimited field: length=3, data=[1,2,3]
+        let mut buf = &[3, 1, 2, 3, 99][..];
+        skip_field(WireType::Len, &mut buf).unwrap();
+        assert_eq!(buf, &[99]);
+
+        // Skip empty length-delimited field
+        let mut buf = &[0, 99][..];
+        skip_field(WireType::Len, &mut buf).unwrap();
+        assert_eq!(buf, &[99]);
+    }
+
+    #[test]
+    fn test_skip_field_groups_error() {
+        let mut buf = &[0u8][..];
+        assert!(skip_field(WireType::SGroup, &mut buf).is_err());
+        assert!(skip_field(WireType::EGroup, &mut buf).is_err());
     }
 }

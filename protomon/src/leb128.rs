@@ -29,10 +29,12 @@ pub trait LebCodec: Sized {
 
     /// Decode a LEB128 variable.
     fn decode_leb128_safe(data: &[u8]) -> Result<(Self, usize), DecodeErrorKind> {
-        // Copy all of the available bytes into a buffer that we know are safe
-        // to read from.
-        //
-        // N.B. For all implementations 16 bytes is the most we'll ever need.
+        // Fast path: if the input is long enough, we can decode directly.
+        if data.len() >= Self::MAX_LEB_BYTES as usize {
+            return unsafe { Self::decode_leb128(data) };
+        }
+
+        // Slow path: copy to a buffer that we know is safe to read from.
         let mut buffer = [0u8; 16];
         let len = data.len().min(16);
         buffer[..len].copy_from_slice(&data[..len]);
@@ -40,15 +42,28 @@ pub trait LebCodec: Sized {
         unsafe { Self::decode_leb128(&buffer[..]) }
     }
 
-    fn decode_leb128_buf<B: bytes::Buf>(buf: &mut B) -> Result<Self, DecodeErrorKind> {
-        const BUF_SIZE: usize = 16;
+    fn decode_leb128_buf<B: bytes::Buf>(buf: &mut B) -> Result<(Self, usize), DecodeErrorKind> {
+        let chunk = buf.chunk();
 
-        let mut buffer = [0u8; BUF_SIZE];
-        let len = buf.remaining().min(BUF_SIZE);
-        buf.copy_to_slice(&mut buffer[..len]);
+        // Fast path: current chunk has enough bytes for direct decode.
+        if chunk.len() >= Self::MAX_LEB_BYTES as usize {
+            let (value, bytes_read) = unsafe { Self::decode_leb128(chunk)? };
+            buf.advance(bytes_read);
+            return Ok((value, bytes_read));
+        }
 
-        let (value, _) = unsafe { Self::decode_leb128(&buffer[..]) }?;
-        Ok(value)
+        // Slow path: read byte by byte.
+        let mut buffer = [0u8; 16];
+        for i in 0..Self::MAX_LEB_BYTES as usize {
+            if !buf.has_remaining() {
+                return Err(DecodeErrorKind::InvalidVarInt);
+            }
+            buffer[i] = buf.get_u8();
+            if buffer[i] < 0x80 {
+                return unsafe { Self::decode_leb128(&buffer[..]) };
+            }
+        }
+        Err(DecodeErrorKind::InvalidVarInt)
     }
 
     /// Encode `self` as a LEB128 variable length integer into the provided

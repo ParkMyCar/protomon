@@ -5,6 +5,9 @@ pub enum DecodeErrorKind {
     InvalidWireType { value: u8 },
     InvalidKey { reason: &'static str },
     InvalidVarInt,
+    UnexpectedEndOfBuffer,
+    DeprecatedGroupEncoding,
+    InvalidUtf8,
 }
 
 impl fmt::Display for DecodeErrorKind {
@@ -18,6 +21,15 @@ impl fmt::Display for DecodeErrorKind {
             }
             DecodeErrorKind::InvalidVarInt => {
                 write!(f, "invalid leb128 varint")
+            }
+            DecodeErrorKind::UnexpectedEndOfBuffer => {
+                write!(f, "unexpected end of buffer")
+            }
+            DecodeErrorKind::DeprecatedGroupEncoding => {
+                write!(f, "deprecated group encoding not supported")
+            }
+            DecodeErrorKind::InvalidUtf8 => {
+                write!(f, "invalid UTF-8 in string field")
             }
         }
     }

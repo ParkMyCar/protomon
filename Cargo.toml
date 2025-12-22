@@ -1,20 +1,3 @@
-[package]
-name = "protomon"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-bytes = "1"
-prost = "0.14"
-
-[dev-dependencies]
-criterion = "0.6"
-proptest = { version = "1", features = ["attr-macro"] }
-
-[[bench]]
-name = "leb128"
-harness = false
-
-[[bench]]
-name = "key"
-harness = false
+[workspace]
+members = ["protomon", "protomon-derive", "protomon-fuzz"]
+resolver = "2"
