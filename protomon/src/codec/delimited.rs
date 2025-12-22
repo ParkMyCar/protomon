@@ -154,6 +154,107 @@ impl ProtoEncode for ProtoString {
     }
 }
 
+impl ProtoType for String {
+    const WIRE_TYPE: WireType = WireType::Len;
+}
+
+impl ProtoDecode for String {
+    #[inline]
+    fn init<B: bytes::Buf>(_msg_buf: B, _tag: u32) -> Self {
+        String::new()
+    }
+
+    #[inline]
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
+        let len = crate::wire::decode_len(buf)?;
+        if buf.remaining() < len {
+            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+        }
+        let data = buf.copy_to_bytes(len);
+
+        // Validate UTF-8 and convert to String.
+        let s = std::str::from_utf8(&data).map_err(|_| DecodeErrorKind::InvalidUtf8)?;
+        *dst = s.to_owned();
+
+        Ok(())
+    }
+}
+
+impl ProtoEncode for String {
+    #[inline]
+    fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+        (self.len() as u64).encode_leb128(buf);
+        buf.put_slice(self.as_bytes());
+    }
+
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        (self.len() as u64).encoded_leb128_len() + self.len()
+    }
+}
+
+impl ProtoType for Vec<u8> {
+    const WIRE_TYPE: WireType = WireType::Len;
+}
+
+impl ProtoDecode for Vec<u8> {
+    #[inline]
+    fn init<B: bytes::Buf>(_msg_buf: B, _tag: u32) -> Self {
+        Vec::new()
+    }
+
+    #[inline]
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
+        let len = crate::wire::decode_len(buf)?;
+        if buf.remaining() < len {
+            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+        }
+
+        dst.clear();
+        dst.reserve(len);
+        // Copy bytes from buffer into dst.
+        let chunk = buf.chunk();
+        if chunk.len() >= len {
+            // Fast path: all bytes in one chunk.
+            dst.extend_from_slice(&chunk[..len]);
+            buf.advance(len);
+        } else {
+            // Slow path: bytes span multiple chunks.
+            let mut remaining = len;
+            while remaining > 0 {
+                let chunk = buf.chunk();
+                let to_copy = chunk.len().min(remaining);
+                dst.extend_from_slice(&chunk[..to_copy]);
+                buf.advance(to_copy);
+                remaining -= to_copy;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl ProtoEncode for Vec<u8> {
+    #[inline]
+    fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+        (self.len() as u64).encode_leb128(buf);
+        buf.put_slice(self);
+    }
+
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        (self.len() as u64).encoded_leb128_len() + self.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,5 +297,72 @@ mod tests {
         let mut decoded = ProtoString::default();
         let result = ProtoString::decode_into(&mut &buf[..], &mut decoded, 0);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_string_roundtrip() {
+        roundtrip(String::new());
+        roundtrip(String::from("hello"));
+        roundtrip(String::from("hello world! 🎉"));
+        roundtrip("a".repeat(300));
+    }
+
+    #[test]
+    fn test_string_invalid_utf8() {
+        // Length prefix = 3, then invalid UTF-8 bytes
+        let buf = &[3u8, 0xff, 0xfe, 0xfd][..];
+        let mut decoded = String::default();
+        let result = String::decode_into(&mut &buf[..], &mut decoded, 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_vec_u8_roundtrip() {
+        roundtrip(Vec::<u8>::new());
+        roundtrip(vec![1u8, 2, 3]);
+        roundtrip(vec![0u8; 300]);
+        roundtrip((0u8..=255).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_string_and_proto_string_compatible() {
+        // Encode with String, decode with ProtoString
+        let original = String::from("hello");
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+
+        let mut decoded = ProtoString::default();
+        ProtoString::decode_into(&mut &buf[..], &mut decoded, 0).unwrap();
+        assert_eq!(decoded.as_str(), "hello");
+
+        // Encode with ProtoString, decode with String
+        let original = ProtoString::from("world");
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+
+        let mut decoded = String::default();
+        String::decode_into(&mut &buf[..], &mut decoded, 0).unwrap();
+        assert_eq!(decoded, "world");
+    }
+
+    #[test]
+    fn test_vec_u8_and_proto_bytes_compatible() {
+        // Encode with Vec<u8>, decode with ProtoBytes
+        let original = vec![1u8, 2, 3, 4, 5];
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+
+        let mut decoded = ProtoBytes::default();
+        ProtoBytes::decode_into(&mut &buf[..], &mut decoded, 0).unwrap();
+        assert_eq!(&*decoded, &[1, 2, 3, 4, 5]);
+
+        // Encode with ProtoBytes, decode with Vec<u8>
+        let original = ProtoBytes::from(&[6u8, 7, 8, 9, 10][..]);
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+
+        let mut decoded = Vec::<u8>::default();
+        Vec::<u8>::decode_into(&mut &buf[..], &mut decoded, 0).unwrap();
+        assert_eq!(decoded, vec![6, 7, 8, 9, 10]);
     }
 }
