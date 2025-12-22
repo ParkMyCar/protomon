@@ -2,8 +2,29 @@
 
 use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
-use crate::wire::WireType;
+use crate::wire::{self, WireType};
 use core::num::NonZeroU32;
+
+/// Trait for encoding repeated protobuf fields.
+///
+/// This trait provides a unified interface for encoding repeated fields,
+/// whether they are stored as `Vec<T>` or `Repeated<T>`. The derive macro
+/// uses this trait to encode repeated fields uniformly.
+pub trait ProtoRepeated {
+    /// Encode all elements with their field keys to the buffer.
+    fn encode_repeated<B: bytes::BufMut>(&self, tag: u32, buf: &mut B);
+
+    /// Returns the total encoded length including field keys.
+    fn encoded_repeated_len(&self, tag: u32) -> usize;
+
+    /// Returns the number of elements.
+    fn repeated_len(&self) -> usize;
+
+    /// Returns true if there are no elements.
+    fn is_repeated_empty(&self) -> bool {
+        self.repeated_len() == 0
+    }
+}
 
 /// Iterator over packed repeated scalar fields.
 ///
@@ -297,6 +318,39 @@ impl<T: ProtoType + ProtoEncode + ProtoDecode + Default + 'static> ProtoEncode f
     }
 }
 
+impl<T: ProtoType + ProtoEncode + ProtoDecode + Default + 'static> ProtoRepeated for Repeated<T> {
+    /// Encode all elements with their field keys.
+    fn encode_repeated<B: bytes::BufMut>(&self, tag: u32, buf: &mut B) {
+        for result in self.iter() {
+            if let Ok(value) = result {
+                wire::encode_key(T::WIRE_TYPE, tag, buf);
+                value.encode(buf);
+            }
+        }
+    }
+
+    fn encoded_repeated_len(&self, tag: u32) -> usize {
+        let count = self.len();
+        if count == 0 {
+            return 0;
+        }
+        let key_len = wire::encoded_key_len(tag);
+        match self {
+            // For Lazy, we tracked values_len during decode
+            Self::Lazy { values_len, .. } => count * key_len + *values_len as usize,
+            // For Owned, we must iterate and sum
+            Self::Owned { iter } => iter
+                .clone_box()
+                .map(|v| key_len + v.encoded_len())
+                .sum(),
+        }
+    }
+
+    fn repeated_len(&self) -> usize {
+        self.len()
+    }
+}
+
 /// Iterator over repeated field elements.
 ///
 /// This enum wraps both lazy decoding (from `Repeated::Lazy`) and owned iteration
@@ -475,6 +529,29 @@ impl<T: ProtoType + ProtoEncode> ProtoEncode for Vec<T> {
     /// Returns the encoded length of all values (not including field keys).
     fn encoded_len(&self) -> usize {
         self.iter().map(|v| v.encoded_len()).sum()
+    }
+}
+
+impl<T: ProtoType + ProtoEncode> ProtoRepeated for Vec<T> {
+    fn encode_repeated<B: bytes::BufMut>(&self, tag: u32, buf: &mut B) {
+        for value in self {
+            wire::encode_key(T::WIRE_TYPE, tag, buf);
+            value.encode(buf);
+        }
+    }
+
+    fn encoded_repeated_len(&self, tag: u32) -> usize {
+        if self.is_empty() {
+            return 0;
+        }
+        let key_len = wire::encoded_key_len(tag);
+        self.iter()
+            .map(|v| key_len + v.encoded_len())
+            .sum()
+    }
+
+    fn repeated_len(&self) -> usize {
+        self.len()
     }
 }
 
