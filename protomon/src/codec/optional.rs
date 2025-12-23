@@ -41,6 +41,9 @@ impl<T: ProtoEncode> ProtoEncode for Option<T> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+    use alloc::vec::Vec;
+
     use super::*;
     use crate::codec::ProtoString;
 

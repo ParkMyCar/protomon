@@ -194,6 +194,7 @@ impl TryFrom<u8> for WireType {
 
 #[cfg(test)]
 mod test {
+    use alloc::vec::Vec;
     use proptest::prelude::*;
 
     use crate::wire::decode_key;

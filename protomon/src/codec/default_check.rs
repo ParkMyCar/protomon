@@ -122,14 +122,16 @@ impl IsProtoDefault for super::ProtoBytes {
     }
 }
 
-impl IsProtoDefault for String {
+#[cfg(feature = "alloc")]
+impl IsProtoDefault for alloc::string::String {
     #[inline(always)]
     fn is_proto_default(&self) -> bool {
         self.is_empty()
     }
 }
 
-impl IsProtoDefault for Vec<u8> {
+#[cfg(feature = "alloc")]
+impl IsProtoDefault for alloc::vec::Vec<u8> {
     #[inline(always)]
     fn is_proto_default(&self) -> bool {
         self.is_empty()

@@ -1,5 +1,10 @@
 //! Length-delimited protobuf types (bytes, string).
 
+#[cfg(feature = "alloc")]
+use alloc::string::String;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
 use crate::leb128::LebCodec;
@@ -71,7 +76,7 @@ impl ProtoString {
     /// # Safety
     /// The bytes are validated as UTF-8 during decode, so this is safe.
     pub fn as_str(&self) -> &str {
-        unsafe { std::str::from_utf8_unchecked(&self.0) }
+        unsafe { core::str::from_utf8_unchecked(&self.0) }
     }
 
     /// Returns the underlying bytes.
@@ -98,6 +103,7 @@ impl From<&str> for ProtoString {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl From<String> for ProtoString {
     fn from(s: String) -> Self {
         ProtoString(bytes::Bytes::from(s))
@@ -122,7 +128,7 @@ impl ProtoDecode for ProtoString {
         let data = buf.copy_to_bytes(len);
 
         // Validate UTF-8.
-        if std::str::from_utf8(&data).is_err() {
+        if core::str::from_utf8(&data).is_err() {
             return Err(DecodeErrorKind::InvalidUtf8);
         }
         *dst = ProtoString(data);
@@ -144,10 +150,12 @@ impl ProtoEncode for ProtoString {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ProtoType for String {
     const WIRE_TYPE: WireType = WireType::Len;
 }
 
+#[cfg(feature = "alloc")]
 impl ProtoDecode for String {
     #[inline(always)]
     fn decode_into<B: bytes::Buf>(
@@ -202,6 +210,7 @@ impl ProtoDecode for String {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ProtoEncode for String {
     #[inline]
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
@@ -215,10 +224,12 @@ impl ProtoEncode for String {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ProtoType for Vec<u8> {
     const WIRE_TYPE: WireType = WireType::Len;
 }
 
+#[cfg(feature = "alloc")]
 impl ProtoDecode for Vec<u8> {
     #[inline]
     fn decode_into<B: bytes::Buf>(
@@ -258,6 +269,7 @@ impl ProtoDecode for Vec<u8> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ProtoEncode for Vec<u8> {
     #[inline]
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
@@ -274,8 +286,9 @@ impl ProtoEncode for Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
-    fn roundtrip<T: ProtoEncode + ProtoDecode + PartialEq + std::fmt::Debug + Default>(value: T) {
+    fn roundtrip<T: ProtoEncode + ProtoDecode + PartialEq + core::fmt::Debug + Default>(value: T) {
         let mut buf = Vec::new();
         value.encode(&mut buf);
         assert_eq!(buf.len(), value.encoded_len());

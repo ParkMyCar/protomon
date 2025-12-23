@@ -478,8 +478,8 @@ pub unsafe fn decode_u64_impl_a(data: *const u8) -> (u64, u32) {
             // TODO(parker): 'pext' is relatively slow on AMD Zen architectures
             // before Zen 5, for those we should fallback to the more naive
             // implementation.
-            let part_a = std::arch::x86_64::_pext_u64(leb_part_a, 0x7f7f7f7f7f7f7f7f);
-            let part_b = std::arch::x86_64::_pext_u64(leb_part_b, 0x000000000000017F);
+            let part_a = core::arch::x86_64::_pext_u64(leb_part_a, 0x7f7f7f7f7f7f7f7f);
+            let part_b = core::arch::x86_64::_pext_u64(leb_part_b, 0x000000000000017F);
 
             // Splice the two parts together.
             part_a | (part_b << 56)
@@ -526,6 +526,7 @@ pub unsafe fn decode_u64_impl_a(data: *const u8) -> (u64, u32) {
 
 #[cfg(test)]
 mod tests {
+    use alloc::format;
     use proptest::prelude::*;
     use proptest::property_test;
 

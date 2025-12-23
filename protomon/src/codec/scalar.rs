@@ -483,9 +483,11 @@ impl ProtoEncode for f64 {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use super::*;
 
-    fn roundtrip<T: ProtoEncode + ProtoDecode + PartialEq + std::fmt::Debug + Default>(value: T) {
+    fn roundtrip<T: ProtoEncode + ProtoDecode + PartialEq + core::fmt::Debug + Default>(value: T) {
         let mut buf = Vec::new();
         value.encode(&mut buf);
         assert_eq!(buf.len(), value.encoded_len());

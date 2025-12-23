@@ -1,3 +1,8 @@
+#![no_std]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 pub mod codec;
 pub mod error;
 pub mod leb128;

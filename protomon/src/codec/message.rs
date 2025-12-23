@@ -1,5 +1,8 @@
 //! Message-level types and helpers.
 
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
 use crate::leb128::LebCodec;
@@ -96,6 +99,7 @@ impl<T> LazyMessage<T> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl<T: ProtoMessage> LazyMessage<T> {
     /// Create a lazy message by encoding a value.
     ///
@@ -156,8 +160,8 @@ impl<T> Default for LazyMessage<T> {
     }
 }
 
-impl<T> std::fmt::Debug for LazyMessage<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T> core::fmt::Debug for LazyMessage<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("LazyMessage")
             .field("len", &self.buf.len())
             .finish()

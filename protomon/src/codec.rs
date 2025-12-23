@@ -4,6 +4,7 @@ mod default_check;
 mod delimited;
 mod message;
 mod optional;
+#[cfg(feature = "alloc")]
 mod repeated;
 mod scalar;
 
@@ -52,9 +53,8 @@ pub use scalar::{Fixed32, Fixed64, Sfixed32, Sfixed64, Sint32, Sint64};
 pub use delimited::{ProtoBytes, ProtoString};
 
 // Re-export repeated field types
-pub use repeated::{
-    CloneableIterator, PackedIter, ProtoRepeated, Repeated, RepeatedDecodeIter, RepeatedIter,
-};
+#[cfg(feature = "alloc")]
+pub use repeated::{PackedIter, ProtoRepeated, Repeated, RepeatedDecodeIter, RepeatedIter};
 
 // Re-export message types and helpers
 pub use message::{

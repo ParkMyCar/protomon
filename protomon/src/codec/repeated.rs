@@ -1,5 +1,7 @@
 //! Repeated field types and iterators.
 
+use alloc::vec::Vec;
+
 use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
 use crate::wire::{self, WireType};
@@ -161,8 +163,8 @@ impl<T: Clone + 'static> Clone for Repeated<T> {
     }
 }
 
-impl<T: 'static> std::fmt::Debug for Repeated<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: 'static> core::fmt::Debug for Repeated<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Lazy { offsets, .. } => f
                 .debug_struct("Repeated::Lazy")
@@ -535,39 +537,11 @@ impl<T: ProtoType + ProtoEncode> ProtoRepeated for Vec<T> {
     }
 }
 
-/// Object-safe trait for cloneable, exact-size iterators.
-///
-/// This trait allows storing iterators in a `Box<dyn CloneableIterator<T>>` while
-/// still being able to clone them (via `clone_box`) and get their length.
-/// This is needed because `Clone` and `ExactSizeIterator` are not object-safe.
-pub trait CloneableIterator<T>: Iterator<Item = T> {
-    /// Clone this iterator into a new boxed iterator.
-    fn clone_box(&self) -> Box<dyn CloneableIterator<T>>;
-
-    /// Returns the exact remaining length of the iterator.
-    fn len(&self) -> usize;
-
-    /// Returns true if the iterator has no more elements.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
-
-impl<T, I> CloneableIterator<T> for I
-where
-    I: Iterator<Item = T> + ExactSizeIterator + Clone + 'static,
-{
-    fn clone_box(&self) -> Box<dyn CloneableIterator<T>> {
-        Box::new(self.clone())
-    }
-
-    fn len(&self) -> usize {
-        ExactSizeIterator::len(self)
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use alloc::string::{String, ToString};
+    use alloc::vec;
+
     use super::super::scalar::Fixed32;
     use super::super::{ProtoEncode, ProtoString};
     use super::*;

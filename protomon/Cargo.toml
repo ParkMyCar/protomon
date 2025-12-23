@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bytes = "1"
+bytes = { version = "1", default-features = false }
 smallvec = { version = "1", features = ["const_generics", "union"], optional = true }
 protomon-derive = { path = "../protomon-derive", optional = true }
 
@@ -14,7 +14,8 @@ prost = "0.14"
 proptest = { version = "1", features = ["attr-macro"] }
 
 [features]
-default = ["smallvec", "derive"]
+default = ["alloc", "smallvec", "derive"]
+alloc = []
 derive = ["dep:protomon-derive"]
 
 [[bench]]
