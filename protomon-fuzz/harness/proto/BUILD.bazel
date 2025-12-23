@@ -1,0 +1,25 @@
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@rules_go//proto:def.bzl", "go_proto_library")
+
+# Shared proto library used by both C++ and Go harnesses
+proto_library(
+    name = "test_proto",
+    srcs = ["test.proto"],
+    visibility = ["//visibility:public"],
+)
+
+# C++ generated code
+cc_proto_library(
+    name = "test_cc_proto",
+    visibility = ["//cpp:__subpackages__"],
+    deps = [":test_proto"],
+)
+
+# Go generated code
+go_proto_library(
+    name = "test_go_proto",
+    importpath = "protomon-fuzz-harness/proto",
+    visibility = ["//go:__subpackages__"],
+    proto = ":test_proto",
+)

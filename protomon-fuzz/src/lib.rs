@@ -1,7 +1,32 @@
 //! Fuzzing framework for protomon.
 //!
-//! This crate generates random protobuf schemas for fuzz testing the protomon
-//! encoding/decoding implementation.
+//! This crate generates random protobuf schemas and values for fuzz testing
+//! the protomon encoding/decoding implementation against other protobuf
+//! implementations (C++, Go).
+//!
+//! # Example
+//!
+//! ```
+//! use protomon_fuzz::{TestCase, Schema};
+//! use arbitrary::Unstructured;
+//!
+//! // Generate a random test case from arbitrary bytes
+//! let data = [0u8; 64];
+//! let mut u = Unstructured::new(&data);
+//! if let Ok(test_case) = TestCase::arbitrary(&mut u) {
+//!     // Output the .proto schema
+//!     println!("{}", test_case.to_proto());
+//!
+//!     // Output JSON for each message
+//!     for (name, json) in test_case.to_json_files() {
+//!         println!("--- {} ---\n{}", name, json);
+//!     }
+//! }
+//! ```
+
+mod value;
+
+pub use value::{FieldValue, MessageValue, ScalarValue, TestCase};
 
 use arbitrary::{Arbitrary, Unstructured};
 use std::collections::HashSet;
@@ -194,6 +219,11 @@ impl MessageDescriptor {
 
     /// Render this message as protobuf syntax.
     pub fn to_proto(&self, indent: usize) -> String {
+        self.to_proto_with_syntax(indent, ProtobufSyntax::Proto3)
+    }
+
+    /// Render this message as protobuf syntax with explicit syntax version.
+    pub fn to_proto_with_syntax(&self, indent: usize, syntax: ProtobufSyntax) -> String {
         let mut output = String::new();
         let indent_str = "  ".repeat(indent);
 
@@ -201,16 +231,19 @@ impl MessageDescriptor {
 
         // Render nested messages first
         for nested in &self.nested_messages {
-            output.push_str(&nested.to_proto(indent + 1));
+            output.push_str(&nested.to_proto_with_syntax(indent + 1, syntax));
             output.push('\n');
         }
 
         // Render fields
         for field in &self.fields {
-            let cardinality_str = match field.cardinality {
-                FieldCardinality::Singular => "",
-                FieldCardinality::Optional => "optional ",
-                FieldCardinality::Repeated => "repeated ",
+            // In proto2, all fields need explicit modifiers.
+            // In proto3, singular fields have no prefix, optional/repeated are explicit.
+            let cardinality_str = match (syntax, field.cardinality) {
+                (ProtobufSyntax::Proto3, FieldCardinality::Singular) => "",
+                (ProtobufSyntax::Proto2, FieldCardinality::Singular) => "optional ",
+                (_, FieldCardinality::Optional) => "optional ",
+                (_, FieldCardinality::Repeated) => "repeated ",
             };
 
             let type_str = match &field.field_type {
@@ -271,7 +304,7 @@ impl Schema {
         output.push_str(&format!("package {};\n\n", self.package));
 
         for message in &self.messages {
-            output.push_str(&message.to_proto(0));
+            output.push_str(&message.to_proto_with_syntax(0, self.syntax));
             output.push_str("\n\n");
         }
 
@@ -678,13 +711,12 @@ mod tests {
         message Level0 {
           message Level1 {
             message Level2 {
-              bytes data = 1;
+              optional bytes data = 1;
             }
             optional Level2 next = 1;
           }
           optional Level1 next = 1;
         }
-
         "#);
     }
 

@@ -1,0 +1,28 @@
+# Bazel artifacts
+/bazel-*
+/.bazelrc.user
+MODULE.bazel.lock
+
+# Build outputs
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+
+# Go artifacts (when building outside Bazel)
+go/harness
+
+# Generated proto files (when building outside Bazel)
+go/proto/*.pb.go
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,2 @@
+# Root BUILD file for protomon-fuzz harness
+# See cpp/ and go/ subdirectories for actual targets

@@ -1,0 +1,25 @@
+# The main harness binary - uses dynamic protobuf messages
+# so it can work with any schema at runtime
+cc_binary(
+    name = "harness",
+    srcs = ["main.cpp"],
+    deps = [
+        "@protobuf//:protobuf",
+        "@protobuf//src/google/protobuf/compiler:importer",
+        "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/flags:parse",
+        "@abseil-cpp//absl/strings",
+    ],
+)
+
+# Harness with compiled proto (for faster testing with known schemas)
+cc_binary(
+    name = "harness_compiled",
+    srcs = ["main_compiled.cpp"],
+    deps = [
+        "//proto:test_cc_proto",
+        "@protobuf//:protobuf",
+        "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/flags:parse",
+    ],
+)

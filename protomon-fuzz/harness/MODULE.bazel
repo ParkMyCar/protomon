@@ -1,0 +1,24 @@
+module(
+    name = "protomon_fuzz_harness",
+    version = "0.1.0",
+)
+
+# Protocol Buffers
+bazel_dep(name = "protobuf", version = "29.3")
+bazel_dep(name = "rules_proto", version = "7.1.0")
+
+# Abseil (required by protobuf)
+bazel_dep(name = "abseil-cpp", version = "20240722.1")
+
+# Go support
+bazel_dep(name = "rules_go", version = "0.50.1")
+bazel_dep(name = "gazelle", version = "0.40.0")
+
+# Register Go SDK version 1.23
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(version = "1.23.4")
+
+# Go protobuf support
+go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//go:go.mod")
+use_repo(go_deps, "org_golang_google_protobuf")

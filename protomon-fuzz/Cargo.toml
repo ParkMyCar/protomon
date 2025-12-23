@@ -7,6 +7,8 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 arbitrary = { version = "1", features = ["derive"] }
+base64 = "0.22"
+tempfile = "3"
 
 [dev-dependencies]
 libfuzzer-sys = "0.4"
@@ -16,6 +18,10 @@ insta = "1"
 name = "fuzz_schema"
 path = "src/bin/fuzz_schema.rs"
 required-features = ["fuzzing"]
+
+[[bin]]
+name = "harness_test"
+path = "src/bin/harness_test.rs"
 
 [features]
 fuzzing = []

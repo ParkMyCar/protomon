@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package fuzztest;
+
+option go_package = "protomon-fuzz-harness/proto";
+
+message TestMessage {
+  int32 id = 1;
+  string name = 2;
+  double score = 3;
+  bool active = 4;
+  repeated string tags = 5;
+  bytes data = 6;
+}
+
+message NestedExample {
+  message Inner {
+    int32 value = 1;
+    string label = 2;
+  }
+
+  int32 id = 1;
+  Inner nested = 2;
+  repeated Inner items = 3;
+}

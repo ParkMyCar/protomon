@@ -1,0 +1,42 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+# Compiled harness - uses pre-generated proto code (faster, but fixed schema)
+go_library(
+    name = "harness_lib",
+    srcs = ["main.go"],
+    importpath = "protomon-fuzz-harness",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//proto:test_go_proto",
+        "@org_golang_google_protobuf//encoding/prototext",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_binary(
+    name = "harness",
+    embed = [":harness_lib"],
+    visibility = ["//visibility:public"],
+)
+
+# Dynamic harness - loads any .proto file at runtime via protoc
+go_library(
+    name = "harness_dynamic_lib",
+    srcs = ["main_dynamic.go"],
+    importpath = "protomon-fuzz-harness/dynamic",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@org_golang_google_protobuf//encoding/prototext",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protodesc",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//types/descriptorpb",
+        "@org_golang_google_protobuf//types/dynamicpb",
+    ],
+)
+
+go_binary(
+    name = "harness_dynamic",
+    embed = [":harness_dynamic_lib"],
+    visibility = ["//visibility:public"],
+)

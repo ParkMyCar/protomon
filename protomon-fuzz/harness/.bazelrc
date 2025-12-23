@@ -1,0 +1,11 @@
+# Enable bzlmod (default in Bazel 7+, but explicit for clarity)
+common --enable_bzlmod
+
+# Use C++17 for modern C++ features
+build --cxxopt=-std=c++17
+
+# Show test output on failure
+test --test_output=errors
+
+# Improve build performance
+build --jobs=auto
