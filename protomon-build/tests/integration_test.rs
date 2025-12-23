@@ -1,4 +1,4 @@
-//! Integration test for protomon-build.
+//! Integration test for protomon-build using insta inline snapshots.
 
 use protomon_build::Config;
 use std::fs;
@@ -20,30 +20,62 @@ fn test_compile_simple_proto() {
     let mod_rs = out_dir.path().join("mod.rs");
     assert!(mod_rs.exists(), "mod.rs should be generated");
 
-    // Read and verify the generated code
+    // Snapshot the generated code
     let content = fs::read_to_string(&test_rs).expect("Failed to read test.rs");
+    insta::assert_snapshot!(content, @"
+    #![allow(clippy::all)]
+    #![allow(warnings)]
+    #![allow(missing_docs)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[repr(i32)]
+    pub enum PhoneType {
+        Mobile = 0,
+        Home = 1,
+        Work = 2,
+    }
+    impl PhoneType {
+        /// Convert from i32, returning None for unknown values.
+        pub fn from_i32(value: i32) -> Option<Self> {
+            match value {
+                0 => Some(Self::Mobile),
+                1 => Some(Self::Home),
+                2 => Some(Self::Work),
+                _ => None,
+            }
+        }
+    }
+    impl From<PhoneType> for i32 {
+        fn from(value: PhoneType) -> Self {
+            value as i32
+        }
+    }
+    impl Default for PhoneType {
+        fn default() -> Self {
+            Self::Mobile
+        }
+    }
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct Person {
+        #[proto(tag = 1)]
+        pub name: protomon::codec::ProtoString,
+        #[proto(tag = 2)]
+        pub id: i32,
+        #[proto(tag = 3, optional)]
+        pub email: Option<protomon::codec::ProtoString>,
+        #[proto(tag = 4, repeated)]
+        pub phones: protomon::codec::Repeated<PhoneNumber>,
+    }
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct PhoneNumber {
+        #[proto(tag = 1)]
+        pub number: protomon::codec::ProtoString,
+        #[proto(tag = 2)]
+        pub r#type: i32,
+    }
+    ");
 
-    // Check for expected structures
-    assert!(content.contains("pub struct Person"), "Should contain Person struct");
-    assert!(content.contains("pub struct PhoneNumber"), "Should contain PhoneNumber struct");
-    assert!(content.contains("pub enum PhoneType"), "Should contain PhoneType enum");
-
-    // Check for expected fields
-    assert!(content.contains("pub name:"), "Should contain name field");
-    assert!(content.contains("pub id:"), "Should contain id field");
-    assert!(content.contains("pub email:"), "Should contain email field");
-    assert!(content.contains("pub phones:"), "Should contain phones field");
-
-    // Check for proto attributes
-    assert!(content.contains("#[proto(tag = 1)]"), "Should contain proto attribute with tag 1");
-    assert!(content.contains("#[proto(tag = 2)]"), "Should contain proto attribute with tag 2");
-
-    // Check for optional field
-    assert!(content.contains("optional"), "Should have optional attribute for email");
-
-    // Check for derive macro
-    assert!(content.contains("#[derive("), "Should have derive attribute");
-    assert!(content.contains("protomon::ProtoMessage"), "Should derive ProtoMessage");
+    let mod_content = fs::read_to_string(&mod_rs).expect("Failed to read mod.rs");
+    insta::assert_snapshot!(mod_content, @"pub mod test;");
 }
 
 #[test]
@@ -61,66 +93,41 @@ fn test_compile_with_extensions() {
     let test_rs = out_dir.path().join("test_extensions.rs");
     let content = fs::read_to_string(&test_rs).expect("Failed to read test_extensions.rs");
 
-    // Check that regular repeated uses Repeated<T>
-    assert!(
-        content.contains("Repeated<"),
-        "Regular repeated field should use Repeated<T>"
-    );
-
-    // Check that vec extension uses Vec<T>
-    assert!(
-        content.contains("Vec<"),
-        "Field with [(protomon.vec) = true] should use Vec<T>"
-    );
-
-    // Check that boxed extension uses Box<T>
-    assert!(
-        content.contains("Box<"),
-        "Field with [(protomon.boxed) = true] should use Box<T>"
-    );
-
-    // Check that lazy extension uses LazyMessage<T>
-    assert!(
-        content.contains("LazyMessage<"),
-        "Field with [(protomon.lazy) = true] should use LazyMessage<T>"
-    );
-
-    // Check that lazy_child uses LazyMessage
-    assert!(
-        content.contains("LazyMessage<Container>"),
-        "Field with lazy option should use LazyMessage<Container>"
-    );
-
-    // Note: eager_child and other recursive Container fields are auto-boxed
-    // because Container references itself. The auto-boxing feature detects
-    // recursive types and adds Box<T> to break the cycle.
-    assert!(
-        content.contains("Option<Box<Container>>"),
-        "Recursive fields should be auto-boxed with Option<Box<T>>"
-    );
-
-    // Check that fixed_array generates [u8; N]
-    // Note: quote! generates "32usize" for the array size
-    assert!(
-        content.contains("pub hash: [u8; 32usize]"),
-        "Field with [(protomon.fixed_array) = 32] should generate [u8; 32]"
-    );
-    assert!(
-        content.contains("pub uuid: [u8; 16usize]"),
-        "Field with [(protomon.fixed_array) = 16] should generate [u8; 16]"
-    );
-
-    // Check that regular bytes field uses ProtoBytes
-    assert!(
-        content.contains("pub data: protomon::codec::ProtoBytes"),
-        "Regular bytes field should use ProtoBytes"
-    );
-
-    // Check that bytes field with vec option uses Vec<u8>
-    assert!(
-        content.contains("pub vec_data: Vec<u8>"),
-        "Field with [(protomon.vec) = true] on bytes should generate Vec<u8>"
-    );
+    // Snapshot the generated code - this captures all extension behaviors:
+    // - Repeated<T> vs Vec<T> for repeated fields
+    // - Box<T> for boxed fields
+    // - LazyMessage<T> for lazy fields
+    // - [u8; N] for fixed_array bytes
+    // - Vec<u8> for vec bytes
+    // - Auto-boxing of recursive types
+    insta::assert_snapshot!(content, @"
+    #![allow(clippy::all)]
+    #![allow(warnings)]
+    #![allow(missing_docs)]
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct Container {
+        #[proto(tag = 1, repeated)]
+        pub regular_tags: protomon::codec::Repeated<protomon::codec::ProtoString>,
+        #[proto(tag = 2, repeated)]
+        pub vec_tags: Vec<protomon::codec::ProtoString>,
+        #[proto(tag = 3, optional)]
+        pub child: Option<Box<Container>>,
+        #[proto(tag = 4, optional)]
+        pub lazy_child: Option<Box<protomon::codec::LazyMessage<Container>>>,
+        #[proto(tag = 5, optional)]
+        pub eager_child: Option<Box<Container>>,
+        #[proto(tag = 6, optional)]
+        pub lazy_boxed_child: Option<Box<protomon::codec::LazyMessage<Container>>>,
+        #[proto(tag = 7)]
+        pub hash: [u8; 32usize],
+        #[proto(tag = 8)]
+        pub data: protomon::codec::ProtoBytes,
+        #[proto(tag = 9)]
+        pub uuid: [u8; 16usize],
+        #[proto(tag = 10)]
+        pub vec_data: Vec<u8>,
+    }
+    ");
 }
 
 #[test]
@@ -138,62 +145,48 @@ fn test_recursive_type_detection() {
     let test_rs = out_dir.path().join("test_recursive.rs");
     let content = fs::read_to_string(&test_rs).expect("Failed to read test_recursive.rs");
 
-    // Direct recursion: Node.left and Node.right should be auto-boxed
-    assert!(
-        content.contains("pub left: Option<Box<Node>>"),
-        "Direct recursive field 'left' should be auto-boxed"
-    );
-    assert!(
-        content.contains("pub right: Option<Box<Node>>"),
-        "Direct recursive field 'right' should be auto-boxed"
-    );
-
-    // Indirect recursion: TreeA.child -> TreeB and TreeB.parent -> TreeA
-    // At least one field in the cycle should be boxed
-    let tree_a_boxed = content.contains("pub child: Option<Box<TreeB>>");
-    let tree_b_boxed = content.contains("pub parent: Option<Box<TreeA>>");
-    assert!(
-        tree_a_boxed || tree_b_boxed,
-        "Indirect recursive cycle should have at least one boxed field"
-    );
-
-    // Non-recursive types should NOT be boxed
-    assert!(
-        content.contains("pub data: Option<"),
-        "Non-recursive field 'data' should exist"
-    );
-    assert!(
-        !content.contains("pub data: Option<Box<"),
-        "Non-recursive field 'data' should NOT be boxed"
-    );
-
-    // Container.leaves references Leaf (non-recursive), should not be boxed
-    assert!(
-        content.contains("Repeated<Leaf>") || content.contains("Vec<Leaf>"),
-        "Container.leaves should reference Leaf without Box"
-    );
-}
-
-#[test]
-fn test_enum_generation() {
-    let out_dir = tempdir().expect("Failed to create temp dir");
-
-    Config::new()
-        .out_dir(out_dir.path())
-        .compile_protos(&["tests/proto/test.proto"], &["tests/proto/"])
-        .expect("Failed to compile protos");
-
-    let test_rs = out_dir.path().join("test.rs");
-    let content = fs::read_to_string(&test_rs).expect("Failed to read test.rs");
-
-    // Check enum variants
-    assert!(content.contains("Mobile"), "Should contain Mobile variant");
-    assert!(content.contains("Home"), "Should contain Home variant");
-    assert!(content.contains("Work"), "Should contain Work variant");
-
-    // Check for from_i32 method
-    assert!(content.contains("fn from_i32"), "Should have from_i32 method");
-
-    // Check for Default impl
-    assert!(content.contains("impl Default for PhoneType"), "Should implement Default for PhoneType");
+    // Snapshot the generated code - this captures:
+    // - Direct recursion auto-boxing (Node.left, Node.right)
+    // - Indirect recursion auto-boxing (TreeA <-> TreeB cycle)
+    // - Non-recursive types NOT being boxed (Leaf, Container.leaves)
+    insta::assert_snapshot!(content, @"
+    #![allow(clippy::all)]
+    #![allow(warnings)]
+    #![allow(missing_docs)]
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct Node {
+        #[proto(tag = 1, optional)]
+        pub value: Option<protomon::codec::ProtoString>,
+        #[proto(tag = 2, optional)]
+        pub left: Option<Box<Node>>,
+        #[proto(tag = 3, optional)]
+        pub right: Option<Box<Node>>,
+    }
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct TreeA {
+        #[proto(tag = 1, optional)]
+        pub name: Option<protomon::codec::ProtoString>,
+        #[proto(tag = 2, optional)]
+        pub child: Option<Box<TreeB>>,
+    }
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct TreeB {
+        #[proto(tag = 1, optional)]
+        pub label: Option<protomon::codec::ProtoString>,
+        #[proto(tag = 2, optional)]
+        pub parent: Option<Box<TreeA>>,
+    }
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct Leaf {
+        #[proto(tag = 1, optional)]
+        pub data: Option<protomon::codec::ProtoString>,
+        #[proto(tag = 2, optional)]
+        pub count: Option<i32>,
+    }
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct Container {
+        #[proto(tag = 1, repeated)]
+        pub leaves: protomon::codec::Repeated<Leaf>,
+    }
+    ");
 }

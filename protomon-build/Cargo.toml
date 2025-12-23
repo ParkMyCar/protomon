@@ -21,3 +21,4 @@ protomon = { path = "../protomon", default-features = false }
 
 [dev-dependencies]
 protomon = { path = "../protomon", features = ["derive"] }
+insta = "1"
