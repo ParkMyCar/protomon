@@ -17,7 +17,7 @@ syn = "2"
 prettyplease = "0.2"
 which = "7"
 tempfile = "3"
-protomon = { path = "../protomon", default-features = false }
+protomon = { path = "../protomon", features = ["derive"] }
 
 [dev-dependencies]
 protomon = { path = "../protomon", features = ["derive"] }
