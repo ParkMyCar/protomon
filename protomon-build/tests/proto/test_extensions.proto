@@ -22,4 +22,13 @@ message Container {
 
   // Combined: lazy + boxed
   optional Container lazy_boxed_child = 6 [(protomon.lazy) = true, (protomon.boxed) = true];
+
+  // Fixed-size array for bytes (e.g., SHA256 hash)
+  bytes hash = 7 [(protomon.fixed_array) = 32];
+
+  // Regular bytes field (uses ProtoBytes)
+  bytes data = 8;
+
+  // Fixed-size array with different size (e.g., UUID)
+  bytes uuid = 9 [(protomon.fixed_array) = 16];
 }

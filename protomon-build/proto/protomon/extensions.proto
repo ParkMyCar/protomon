@@ -18,7 +18,8 @@
 //     50001 - vec: Use Vec<T> for repeated fields
 //     50002 - boxed: Wrap field in Box<T>
 //     50003 - lazy: Wrap message in LazyMessage<T>
-//     50004-50009 - Reserved for future field options
+//     50004 - fixed_array: Use [u8; N] for bytes fields
+//     50005-50009 - Reserved for future field options
 //     50010-50019 - Reserved for future message options
 //     50020-50029 - Reserved for future enum options
 //     50030-50039 - Reserved for future file options
@@ -46,4 +47,11 @@ extend google.protobuf.FieldOptions {
   // The message is not decoded until accessed, and borrows from the input buffer.
   // Only valid on message-type fields; errors if used on scalar fields.
   bool lazy = 50003;
+
+  // Use a fixed-size array [u8; N] instead of ProtoBytes for bytes fields.
+  // The value specifies the array size (max 32, due to Rust's Default trait).
+  // Useful for fixed-size data like hashes (32 bytes) or UUIDs (16 bytes).
+  // Only valid on bytes fields; errors if used on other field types.
+  // Example: bytes hash = 1 [(protomon.fixed_array) = 32];  // [u8; 32]
+  uint32 fixed_array = 50004;
 }

@@ -27,6 +27,9 @@
 //!
 //!   // Use `LazyMessage<T>` for lazy/zero-copy decoding
 //!   optional OtherMessage data = 3 [(protomon.lazy) = true];
+//!
+//!   // Use fixed-size array `[u8; N]` for bytes fields (max N=32)
+//!   bytes hash = 4 [(protomon.fixed_array) = 32];  // [u8; 32]
 //! }
 //! ```
 //!

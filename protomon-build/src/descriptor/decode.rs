@@ -24,6 +24,9 @@ const EXT_FIELD_BOXED: u32 = 50002;
 /// Extension field number for `lazy` option: wrap message in `LazyMessage<T>`.
 const EXT_FIELD_LAZY: u32 = 50003;
 
+/// Extension field number for `fixed_array` option: use `[u8; N]` for bytes fields.
+const EXT_FIELD_FIXED_ARRAY: u32 = 50004;
+
 /// Decode a FileDescriptorSet from protobuf binary data.
 pub fn decode_file_descriptor_set(data: &[u8]) -> Result<FileDescriptorSet, Error> {
     let mut buf = data;
@@ -165,6 +168,7 @@ fn decode_field_options(data: &[u8]) -> Result<FieldOptions, Error> {
             EXT_FIELD_VEC => opts.vec = decode_varint(&mut buf)? != 0,
             EXT_FIELD_BOXED => opts.boxed = decode_varint(&mut buf)? != 0,
             EXT_FIELD_LAZY => opts.lazy = decode_varint(&mut buf)? != 0,
+            EXT_FIELD_FIXED_ARRAY => opts.fixed_array = decode_varint(&mut buf)? as u32,
             // Skip all other fields (standard protobuf FieldOptions fields)
             _ => skip_field(&mut buf, wire_type)?,
         }

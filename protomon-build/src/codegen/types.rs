@@ -55,10 +55,11 @@ pub fn proto_type_to_rust(
         (_, Label::Repeated, _) => false,
     };
 
-    // Check protomon extensions for vec, boxed, and lazy options
+    // Check protomon extensions for vec, boxed, lazy, and fixed_array options
     let use_vec = field_options.map(|o| o.vec).unwrap_or(false);
     let explicit_boxed = field_options.map(|o| o.boxed).unwrap_or(false);
     let is_lazy = field_options.map(|o| o.lazy).unwrap_or(false);
+    let fixed_array = field_options.map(|o| o.fixed_array).unwrap_or(0);
 
     // Box if explicitly requested OR if auto-detected as recursive
     let is_boxed = explicit_boxed || auto_box;
@@ -77,7 +78,25 @@ pub fn proto_type_to_rust(
         ));
     }
 
-    let base_type = scalar_type_to_rust(ctx, proto_type, type_name, is_lazy)?;
+    // Validate that fixed_array option is only used on bytes fields
+    if fixed_array > 0 && proto_type != Type::Bytes {
+        return Err(Error::InvalidOption(
+            "[(protomon.fixed_array) = N] can only be used on bytes fields".into(),
+        ));
+    }
+
+    // Validate that fixed_array size is at most 32 (Rust's Default trait limit)
+    if fixed_array > 32 {
+        return Err(Error::InvalidOption(
+            format!(
+                "[(protomon.fixed_array) = {}] exceeds maximum size of 32. \
+                 Rust's Default trait is only implemented for arrays up to [T; 32].",
+                fixed_array
+            ),
+        ));
+    }
+
+    let base_type = scalar_type_to_rust(ctx, proto_type, type_name, is_lazy, fixed_array)?;
 
     Ok(RustType {
         base_type,
@@ -91,11 +110,13 @@ pub fn proto_type_to_rust(
 /// Map proto scalar/message type to base Rust type.
 ///
 /// For message types, `is_lazy` controls whether to wrap in `LazyMessage<T>`.
+/// For bytes types, `fixed_array` > 0 uses `[u8; N]` instead of `ProtoBytes`.
 fn scalar_type_to_rust(
     ctx: &GenerationContext,
     proto_type: Type,
     type_name: Option<&str>,
     is_lazy: bool,
+    fixed_array: u32,
 ) -> Result<TokenStream, Error> {
     let tokens = match proto_type {
         // Integers - standard encoding
@@ -123,7 +144,14 @@ fn scalar_type_to_rust(
 
         // String and bytes
         Type::String => quote!(protomon::codec::ProtoString),
-        Type::Bytes => quote!(protomon::codec::ProtoBytes),
+        Type::Bytes => {
+            if fixed_array > 0 {
+                let size = fixed_array as usize;
+                quote!([u8; #size])
+            } else {
+                quote!(protomon::codec::ProtoBytes)
+            }
+        }
 
         // Message type
         Type::Message => {

@@ -142,6 +142,10 @@ pub struct FieldOptions {
     /// Wrap message field in `LazyMessage<T>` for lazy/zero-copy decoding.
     /// Extension field 50003.
     pub lazy: bool,
+
+    /// Use fixed-size array `[u8; N]` instead of `ProtoBytes` for bytes fields.
+    /// Extension field 50004. Value of 0 means not set.
+    pub fixed_array: u32,
 }
 
 /// Field type enumeration.

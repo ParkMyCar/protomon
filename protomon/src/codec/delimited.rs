@@ -283,6 +283,48 @@ impl ProtoEncode for Vec<u8> {
     }
 }
 
+impl<const N: usize> ProtoType for [u8; N] {
+    const WIRE_TYPE: WireType = WireType::Len;
+}
+
+impl<const N: usize> ProtoDecode for [u8; N]
+where
+    [u8; N]: Default,
+{
+    #[inline]
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
+        let len = crate::wire::decode_len(buf)?;
+        if len != N {
+            return Err(DecodeErrorKind::LengthMismatch {
+                expected: N as u16,
+                actual: len as u16,
+            });
+        }
+        if buf.remaining() < N {
+            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+        }
+        buf.copy_to_slice(dst);
+        Ok(())
+    }
+}
+
+impl<const N: usize> ProtoEncode for [u8; N] {
+    #[inline]
+    fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+        (N as u64).encode_leb128(buf);
+        buf.put_slice(self);
+    }
+
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        (N as u64).encoded_leb128_len() + N
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,5 +435,65 @@ mod tests {
         let mut decoded = Vec::<u8>::default();
         Vec::<u8>::decode_into(&mut &buf[..], &mut decoded, 0).unwrap();
         assert_eq!(decoded, vec![6, 7, 8, 9, 10]);
+    }
+
+    fn roundtrip_array<const N: usize>(value: [u8; N])
+    where
+        [u8; N]: Default,
+    {
+        let mut buf = Vec::new();
+        value.encode(&mut buf);
+        assert_eq!(buf.len(), value.encoded_len());
+        let mut decoded = [0u8; N];
+        <[u8; N] as ProtoDecode>::decode_into(&mut &buf[..], &mut decoded, 0).unwrap();
+        assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn test_fixed_array_roundtrip() {
+        roundtrip_array([0u8; 0]);
+        roundtrip_array([1u8, 2, 3]);
+        roundtrip_array([0u8; 32]); // Common for SHA-256 hashes
+        // Note: Default only implemented for arrays up to size 32
+    }
+
+    #[test]
+    fn test_fixed_array_length_mismatch() {
+        // Encode 5 bytes
+        let original = [1u8, 2, 3, 4, 5];
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+
+        // Try to decode into 3-byte array - should fail
+        let mut decoded = [0u8; 3];
+        let result = <[u8; 3] as ProtoDecode>::decode_into(&mut &buf[..], &mut decoded, 0);
+        assert!(matches!(
+            result,
+            Err(DecodeErrorKind::LengthMismatch {
+                expected: 3,
+                actual: 5
+            })
+        ));
+    }
+
+    #[test]
+    fn test_fixed_array_compatible_with_proto_bytes() {
+        // Encode with [u8; N], decode with ProtoBytes
+        let original = [1u8, 2, 3, 4, 5];
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+
+        let mut decoded = ProtoBytes::default();
+        ProtoBytes::decode_into(&mut &buf[..], &mut decoded, 0).unwrap();
+        assert_eq!(&*decoded, &[1, 2, 3, 4, 5]);
+
+        // Encode with ProtoBytes, decode with [u8; N]
+        let original = ProtoBytes::from(&[6u8, 7, 8, 9, 10][..]);
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+
+        let mut decoded = [0u8; 5];
+        <[u8; 5] as ProtoDecode>::decode_into(&mut &buf[..], &mut decoded, 0).unwrap();
+        assert_eq!(decoded, [6, 7, 8, 9, 10]);
     }
 }

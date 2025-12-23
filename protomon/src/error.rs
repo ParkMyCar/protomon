@@ -8,6 +8,7 @@ pub enum DecodeErrorKind {
     UnexpectedEndOfBuffer,
     DeprecatedGroupEncoding,
     InvalidUtf8,
+    LengthMismatch { expected: u16, actual: u16 },
     ProgrammingError { reason: &'static str },
 }
 
@@ -31,6 +32,9 @@ impl fmt::Display for DecodeErrorKind {
             }
             DecodeErrorKind::InvalidUtf8 => {
                 write!(f, "invalid UTF-8 in string field")
+            }
+            DecodeErrorKind::LengthMismatch { expected, actual } => {
+                write!(f, "length mismatch: expected {expected}, got {actual}")
             }
             DecodeErrorKind::ProgrammingError { reason } => {
                 write!(f, "programming error: '{reason}'")

@@ -98,6 +98,23 @@ fn test_compile_with_extensions() {
         content.contains("Option<Box<Container>>"),
         "Recursive fields should be auto-boxed with Option<Box<T>>"
     );
+
+    // Check that fixed_array generates [u8; N]
+    // Note: quote! generates "32usize" for the array size
+    assert!(
+        content.contains("pub hash: [u8; 32usize]"),
+        "Field with [(protomon.fixed_array) = 32] should generate [u8; 32]"
+    );
+    assert!(
+        content.contains("pub uuid: [u8; 16usize]"),
+        "Field with [(protomon.fixed_array) = 16] should generate [u8; 16]"
+    );
+
+    // Check that regular bytes field uses ProtoBytes
+    assert!(
+        content.contains("pub data: protomon::codec::ProtoBytes"),
+        "Regular bytes field should use ProtoBytes"
+    );
 }
 
 #[test]
