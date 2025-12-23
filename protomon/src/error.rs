@@ -11,6 +11,7 @@ pub enum DecodeErrorKind {
     LengthMismatch { expected: u16, actual: u16 },
     ProgrammingError { reason: &'static str },
     MissingRequiredOneof { field: &'static str },
+    InvalidPackedLength { expected_multiple: u8, actual: u32 },
 }
 
 impl fmt::Display for DecodeErrorKind {
@@ -42,6 +43,15 @@ impl fmt::Display for DecodeErrorKind {
             }
             DecodeErrorKind::MissingRequiredOneof { field } => {
                 write!(f, "missing required oneof field: '{field}'")
+            }
+            DecodeErrorKind::InvalidPackedLength {
+                expected_multiple,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "invalid packed field length: {actual} is not a multiple of {expected_multiple}"
+                )
             }
         }
     }

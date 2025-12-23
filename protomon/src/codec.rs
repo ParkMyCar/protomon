@@ -6,7 +6,8 @@ mod delimited;
 mod map;
 mod message;
 mod oneof;
-mod wrappers;
+#[cfg(feature = "alloc")]
+mod packed;
 #[cfg(feature = "alloc")]
 mod repeated;
 mod scalar;
@@ -73,3 +74,6 @@ pub use oneof::{decode_oneof_field, encode_oneof_field, encoded_oneof_field_len,
 #[cfg(feature = "alloc")]
 pub use map::{ProtoMap, ProtoMapKey};
 
+// Re-export optimized packed decoding
+#[cfg(feature = "alloc")]
+pub use packed::PackedDecode;
