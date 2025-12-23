@@ -157,6 +157,9 @@ impl ProtoType for String {
 
 #[cfg(feature = "alloc")]
 impl ProtoDecode for String {
+    // Allow uninit_vec: We use a Guard pattern that clears the buffer on drop,
+    // ensuring uninitialized memory is never exposed even on panic or invalid UTF-8.
+    #[allow(clippy::uninit_vec)]
     #[inline(always)]
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,
@@ -231,6 +234,9 @@ impl ProtoType for Vec<u8> {
 
 #[cfg(feature = "alloc")]
 impl ProtoDecode for Vec<u8> {
+    // Allow uninit_vec: We use a Guard pattern that clears the buffer on drop,
+    // ensuring uninitialized memory is never exposed even on panic.
+    #[allow(clippy::uninit_vec)]
     #[inline]
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,
