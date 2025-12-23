@@ -9,10 +9,12 @@ use syn::{DeriveInput, Field, Ident, Result, Type};
 
 /// Derive macro for implementing `ProtoMessage` trait.
 ///
+/// Note: You must also derive or implement `Default` for your struct.
+///
 /// # Example
 ///
 /// ```ignore
-/// #[derive(ProtoMessage)]
+/// #[derive(Default, ProtoMessage)]
 /// pub struct Person {
 ///     #[proto(tag = 1)]
 ///     name: ProtoString,
@@ -79,24 +81,7 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
     let encode_impl = generate_encode(&field_info);
     let len_impl = generate_len(&field_info);
 
-    // Generate Default impl
-    let default_fields = field_info.iter().map(|f| {
-        let fname = f.name;
-        let fty = f.ty;
-        quote! {
-            #fname: <#fty as Default>::default()
-        }
-    });
-
     Ok(quote! {
-        impl Default for #name {
-            fn default() -> Self {
-                Self {
-                    #(#default_fields),*
-                }
-            }
-        }
-
         impl protomon::codec::ProtoType for #name {
             const WIRE_TYPE: protomon::wire::WireType = protomon::wire::WireType::Len;
         }

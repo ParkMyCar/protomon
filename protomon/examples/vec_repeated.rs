@@ -13,7 +13,7 @@ use bytes::Bytes;
 use protomon::codec::{ProtoMessage, ProtoString};
 use protomon::ProtoMessage as ProtoMessageDerive;
 
-#[derive(Debug, PartialEq, ProtoMessageDerive)]
+#[derive(Debug, Default, PartialEq, ProtoMessageDerive)]
 pub struct Scores {
     #[proto(tag = 1)]
     pub player_name: ProtoString,

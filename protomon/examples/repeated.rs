@@ -18,7 +18,7 @@ use bytes::Bytes;
 use protomon::codec::{LazyMessage, ProtoMessage, ProtoString, Repeated};
 use protomon::ProtoMessage as ProtoMessageDerive;
 
-#[derive(Debug, Clone, PartialEq, ProtoMessageDerive)]
+#[derive(Debug, Clone, Default, PartialEq, ProtoMessageDerive)]
 pub struct PhoneNumber {
     #[proto(tag = 1)]
     pub number: ProtoString,
@@ -27,7 +27,7 @@ pub struct PhoneNumber {
 }
 
 /// Minimal allocation, create a `Vec` but lazily decode the inner type.
-#[derive(Debug, ProtoMessageDerive)]
+#[derive(Debug, Default, ProtoMessageDerive)]
 pub struct PersonMinimal {
     #[proto(tag = 1)]
     pub name: ProtoString,
@@ -38,7 +38,7 @@ pub struct PersonMinimal {
 }
 
 /// Zero allocation! Repeated lazily decodes the inner type.
-#[derive(Debug, ProtoMessageDerive)]
+#[derive(Debug, Default, ProtoMessageDerive)]
 pub struct PersonZero {
     #[proto(tag = 1)]
     pub name: ProtoString,

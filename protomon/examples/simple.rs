@@ -4,7 +4,7 @@ use bytes::Bytes;
 use protomon::codec::{ProtoMessage, ProtoString};
 use protomon::ProtoMessage as ProtoMessageDerive;
 
-#[derive(Debug, PartialEq, ProtoMessageDerive)]
+#[derive(Debug, Default, PartialEq, ProtoMessageDerive)]
 pub struct PhoneNumber {
     #[proto(tag = 1)]
     pub number: ProtoString,

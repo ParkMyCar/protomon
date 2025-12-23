@@ -29,7 +29,7 @@ mod protomon_types {
     use protomon::codec::{LazyMessage, ProtoString, Repeated};
     use protomon::ProtoMessage;
 
-    #[derive(Clone, PartialEq, ProtoMessage)]
+    #[derive(Clone, PartialEq, Default, ProtoMessage)]
     pub struct PhoneNumber {
         #[proto(tag = 1)]
         pub number: ProtoString,
@@ -37,7 +37,7 @@ mod protomon_types {
         pub phone_type: i32,
     }
 
-    #[derive(Clone, ProtoMessage)]
+    #[derive(Clone, Default, ProtoMessage)]
     pub struct Person {
         #[proto(tag = 1)]
         pub name: ProtoString,
@@ -50,7 +50,7 @@ mod protomon_types {
     }
 
     /// Person variant using Vec<LazyMessage<PhoneNumber>> instead of Repeated
-    #[derive(Clone, ProtoMessage)]
+    #[derive(Clone, Default, ProtoMessage)]
     pub struct PersonVecLazy {
         #[proto(tag = 1)]
         pub name: ProtoString,
@@ -63,7 +63,7 @@ mod protomon_types {
     }
 
     /// Person variant using Vec<PhoneNumber> - fully eager like prost
-    #[derive(Clone, ProtoMessage)]
+    #[derive(Clone, Default, ProtoMessage)]
     pub struct PersonVecEager {
         #[proto(tag = 1)]
         pub name: ProtoString,
@@ -77,7 +77,7 @@ mod protomon_types {
 
     // ========== String-based types (1:1 with prost) ==========
 
-    #[derive(Clone, PartialEq, ProtoMessage)]
+    #[derive(Clone, PartialEq, Default, ProtoMessage)]
     pub struct PhoneNumberStr {
         #[proto(tag = 1)]
         pub number: String,
@@ -86,7 +86,7 @@ mod protomon_types {
     }
 
     /// Person using String instead of ProtoString - 1:1 comparison with prost
-    #[derive(Clone, ProtoMessage)]
+    #[derive(Clone, Default, ProtoMessage)]
     pub struct PersonStr {
         #[proto(tag = 1)]
         pub name: String,
