@@ -59,6 +59,13 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
     // The remaining bits are the tag / field number.
     let tag = value >> 3;
 
+    // Validate tag is in valid range (1 to 2^29-1)
+    if unlikely(tag == 0 || tag > MAXIMUM_TAG_VAL as u64) {
+        return Err(DecodeErrorKind::InvalidKey {
+            reason: "tag out of range",
+        });
+    }
+
     Ok((wire_type, tag as u32))
 }
 
@@ -143,6 +150,17 @@ impl WireType {
     /// Maximum value an [`WireType`] can be.
     const MAX_VAL: u8 = WireType::I32 as u8;
 
+    // Compile-time check that our discriminants are contiguous 0..=MAX_VAL.
+    // If someone reorders the enum, this will fail to compile.
+    const _DISCRIMINANT_CHECK: () = {
+        assert!(WireType::Varint as u8 == 0);
+        assert!(WireType::I64 as u8 == 1);
+        assert!(WireType::Len as u8 == 2);
+        assert!(WireType::SGroup as u8 == 3);
+        assert!(WireType::EGroup as u8 == 4);
+        assert!(WireType::I32 as u8 == 5);
+    };
+
     /// Try to decode a [`WireType`] from the provided raw value.
     #[inline(always)]
     const fn try_from_val(value: u8) -> Result<Self, DecodeErrorKind> {
@@ -182,13 +200,12 @@ mod test {
     use crate::wire::decode_len;
     use crate::wire::encode_key;
     use crate::wire::skip_field;
-    use crate::wire::WireType;
-    use crate::wire::MINIMUM_TAG_VAL;
+    use crate::wire::{WireType, MAXIMUM_TAG_VAL, MINIMUM_TAG_VAL};
 
     #[test]
     fn proptest_key_roundtrips() {
         fn arb_tag() -> impl Strategy<Value = u32> {
-            MINIMUM_TAG_VAL..=MINIMUM_TAG_VAL
+            MINIMUM_TAG_VAL..=MAXIMUM_TAG_VAL
         }
 
         fn arb_wiretype() -> impl Strategy<Value = WireType> {
