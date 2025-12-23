@@ -22,13 +22,30 @@
 //!   // Use `Vec<T>` instead of `Repeated<T>`
 //!   repeated string tags = 1 [(protomon.vec) = true];
 //!
-//!   // Use `Box<T>` for recursive types
+//!   // Explicit `Box<T>` wrapping (optional - see auto-boxing below)
 //!   optional MyMessage child = 2 [(protomon.boxed) = true];
 //!
 //!   // Use `LazyMessage<T>` for lazy/zero-copy decoding
 //!   optional OtherMessage data = 3 [(protomon.lazy) = true];
 //! }
 //! ```
+//!
+//! # Automatic Boxing of Recursive Types
+//!
+//! Recursive protobuf types (messages that reference themselves directly or
+//! indirectly) are automatically detected and wrapped in `Box<T>` to ensure
+//! the generated Rust types have a known size at compile time.
+//!
+//! ```protobuf
+//! // These recursive fields are automatically boxed:
+//! message Node {
+//!   optional Node left = 1;   // Generates: Option<Box<Node>>
+//!   optional Node right = 2;  // Generates: Option<Box<Node>>
+//! }
+//! ```
+//!
+//! You don't need to add `[(protomon.boxed) = true]` for recursive types -
+//! the code generator handles this automatically.
 //!
 //! # Advanced Usage
 //!

@@ -73,7 +73,8 @@ fn collect_message_edges(
         None => return,
     };
 
-    let message_fqn = format!("{}{}", prefix.trim_end_matches('.'), name);
+    // Construct the fully-qualified name: prefix already ends with '.' so just append name
+    let message_fqn = format!("{}{}", prefix, name);
     let mut edges = Vec::new();
 
     // Collect message-type field references

@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package test_recursive;
+
+// Direct recursion: a message references itself
+message Node {
+  optional string value = 1;
+  optional Node left = 2;
+  optional Node right = 3;
+}
+
+// Indirect recursion: A -> B -> A
+message TreeA {
+  optional string name = 1;
+  optional TreeB child = 2;
+}
+
+message TreeB {
+  optional string label = 1;
+  optional TreeA parent = 2;
+}
+
+// No recursion: should not be boxed
+message Leaf {
+  optional string data = 1;
+  optional int32 count = 2;
+}
+
+// References non-recursive type: should not be boxed
+message Container {
+  repeated Leaf leaves = 1;
+}

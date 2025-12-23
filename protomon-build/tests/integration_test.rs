@@ -85,17 +85,69 @@ fn test_compile_with_extensions() {
         "Field with [(protomon.lazy) = true] should use LazyMessage<T>"
     );
 
-    // Check that eager_child (no lazy) does NOT use LazyMessage
-    // It should just be Option<Container>
-    assert!(
-        content.contains("pub eager_child: Option<Container>"),
-        "Field without lazy option should not use LazyMessage"
-    );
-
     // Check that lazy_child uses LazyMessage
     assert!(
         content.contains("LazyMessage<Container>"),
         "Field with lazy option should use LazyMessage<Container>"
+    );
+
+    // Note: eager_child and other recursive Container fields are auto-boxed
+    // because Container references itself. The auto-boxing feature detects
+    // recursive types and adds Box<T> to break the cycle.
+    assert!(
+        content.contains("Option<Box<Container>>"),
+        "Recursive fields should be auto-boxed with Option<Box<T>>"
+    );
+}
+
+#[test]
+fn test_recursive_type_detection() {
+    let out_dir = tempdir().expect("Failed to create temp dir");
+
+    Config::new()
+        .out_dir(out_dir.path())
+        .compile_protos(
+            &["tests/proto/test_recursive.proto"],
+            &["tests/proto/"],
+        )
+        .expect("Failed to compile protos");
+
+    let test_rs = out_dir.path().join("test_recursive.rs");
+    let content = fs::read_to_string(&test_rs).expect("Failed to read test_recursive.rs");
+
+    // Direct recursion: Node.left and Node.right should be auto-boxed
+    assert!(
+        content.contains("pub left: Option<Box<Node>>"),
+        "Direct recursive field 'left' should be auto-boxed"
+    );
+    assert!(
+        content.contains("pub right: Option<Box<Node>>"),
+        "Direct recursive field 'right' should be auto-boxed"
+    );
+
+    // Indirect recursion: TreeA.child -> TreeB and TreeB.parent -> TreeA
+    // At least one field in the cycle should be boxed
+    let tree_a_boxed = content.contains("pub child: Option<Box<TreeB>>");
+    let tree_b_boxed = content.contains("pub parent: Option<Box<TreeA>>");
+    assert!(
+        tree_a_boxed || tree_b_boxed,
+        "Indirect recursive cycle should have at least one boxed field"
+    );
+
+    // Non-recursive types should NOT be boxed
+    assert!(
+        content.contains("pub data: Option<"),
+        "Non-recursive field 'data' should exist"
+    );
+    assert!(
+        !content.contains("pub data: Option<Box<"),
+        "Non-recursive field 'data' should NOT be boxed"
+    );
+
+    // Container.leaves references Leaf (non-recursive), should not be boxed
+    assert!(
+        content.contains("Repeated<Leaf>") || content.contains("Vec<Leaf>"),
+        "Container.leaves should reference Leaf without Box"
     );
 }
 
