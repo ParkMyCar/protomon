@@ -11,7 +11,7 @@ macro_rules! assert_eq_size {
 
 pub(crate) use assert_eq_size;
 
-#[inline(always)]
+#[inline(never)]
 #[cold]
 fn cold_path() {}
 
