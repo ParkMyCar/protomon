@@ -32,7 +32,7 @@ pub fn encoded_key_len(tag: u32) -> usize {
 ///
 /// Follows the specification from <https://protobuf.dev/programming-guides/encoding>
 /// under the "Message Structure" section.
-#[inline(always)]
+#[inline]
 pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeErrorKind> {
     let chunk = buf.chunk();
     let chunk_len = chunk.len();
@@ -63,10 +63,18 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
 }
 
 /// Decodes the length prefix for a length-delimited field.
-#[inline]
+#[inline(always)]
 pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeErrorKind> {
-    let (len, _) = u64::decode_leb128_buf(buf)?;
-    Ok(len as usize)
+    let chunk = buf.chunk();
+    // Fast path: most lengths fit in one byte (< 128)
+    if likely(!chunk.is_empty() && chunk[0] < 0x80) {
+        let len = chunk[0] as usize;
+        buf.advance(1);
+        Ok(len)
+    } else {
+        let (len, _) = u64::decode_leb128_buf(buf)?;
+        Ok(len as usize)
+    }
 }
 
 /// Skips over a field value based on its wire type.

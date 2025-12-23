@@ -1,5 +1,6 @@
 //! Encoding and decoding traits for protobuf wire format.
 
+mod default_check;
 mod delimited;
 mod message;
 mod optional;
@@ -15,18 +16,14 @@ pub trait ProtoType: Sized {
 }
 
 /// A type that can be decoded from protobuf wire format.
-///
-/// The `decode_into` method follows protobuf merging semantics:
-/// - Scalars: last value wins (overwrite)
-/// - Embedded messages: recursive merge
-/// - Repeated fields: append
 pub trait ProtoDecode: ProtoType + Default {
-    /// Decode from buffer into dst, following protobuf merging semantics.
+    /// Decode from `buf` into `dst`, following protobuf merging semantics.
     ///
     /// # Parameters
-    /// - `buf`: The buffer to decode from (positioned at the value, after the key).
-    /// - `dst`: The destination to decode into.
-    /// - `offset`: Byte offset of this value in the message buffer.
+    /// * `buf`: The buffer to decode from (positioned at the value, after the key).
+    /// * `dst`: The destination to decode into.
+    /// * `offset`: Byte offset of this value in the message buffer.
+    ///
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,
         dst: &mut Self,
@@ -44,6 +41,9 @@ pub trait ProtoEncode: ProtoType {
     /// Returns the encoded length of this value (not including field key).
     fn encoded_len(&self) -> usize;
 }
+
+// Re-export default checking trait
+pub use default_check::IsProtoDefault;
 
 // Re-export scalar types
 pub use scalar::{Fixed32, Fixed64, Sfixed32, Sfixed64, Sint32, Sint64};

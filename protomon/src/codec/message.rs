@@ -10,12 +10,22 @@ use crate::wire::WireType;
 /// This trait is implemented by generated message structs. It handles decoding
 /// the message body (without length prefix). The `ProtoDecode` impl for messages
 /// handles reading the length prefix first.
-pub trait ProtoMessage: Sized {
+pub trait ProtoMessage: Sized + Default {
     /// Decode a message from the given bytes buffer.
     ///
     /// Takes ownership of `Bytes` to allow zero-copy storage for repeated field iteration.
     /// Consumes all bytes in the buffer.
-    fn decode_message(buf: bytes::Bytes) -> Result<Self, DecodeErrorKind>;
+    fn decode_message(buf: bytes::Bytes) -> Result<Self, DecodeErrorKind> {
+        let mut result = Self::default();
+        Self::decode_message_into(buf, &mut result)?;
+        Ok(result)
+    }
+
+    /// Decode a message from the given bytes buffer into an existing struct.
+    ///
+    /// This is the primary decode method - it decodes directly into `dst` without
+    /// creating intermediate values.
+    fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), DecodeErrorKind>;
 
     /// Encode the message body (without length prefix).
     fn encode_message<B: bytes::BufMut>(&self, buf: &mut B);
@@ -182,25 +192,20 @@ mod tests {
     }
 
     impl ProtoMessage for PhoneNumber {
-        fn decode_message(buf: bytes::Bytes) -> Result<Self, DecodeErrorKind> {
+        fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), DecodeErrorKind> {
             let mut slice = &buf[..];
-            let mut number = ProtoString::default();
-            let mut phone_type = 0i32;
 
             while slice.has_remaining() {
                 let (wire_type, tag) = decode_key(&mut slice)?;
                 let value_offset = buf.len() - slice.len();
                 match tag {
-                    1 => ProtoString::decode_into(&mut slice, &mut number, value_offset)?,
-                    2 => i32::decode_into(&mut slice, &mut phone_type, value_offset)?,
+                    1 => ProtoString::decode_into(&mut slice, &mut dst.number, value_offset)?,
+                    2 => i32::decode_into(&mut slice, &mut dst.phone_type, value_offset)?,
                     _ => skip_field(wire_type, &mut slice)?,
                 }
             }
-            Ok(PhoneNumber {
-                buf,
-                number,
-                phone_type,
-            })
+            dst.buf = buf;
+            Ok(())
         }
 
         fn encode_message<B: bytes::BufMut>(&self, buf: &mut B) {
@@ -235,21 +240,20 @@ mod tests {
     }
 
     impl ProtoMessage for Person {
-        fn decode_message(buf: bytes::Bytes) -> Result<Self, DecodeErrorKind> {
+        fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), DecodeErrorKind> {
             let mut slice = &buf[..];
-            let mut name = ProtoString::default();
-            let mut phone = None;
 
             while slice.has_remaining() {
                 let (wire_type, tag) = decode_key(&mut slice)?;
                 let value_offset = buf.len() - slice.len();
                 match tag {
-                    1 => ProtoString::decode_into(&mut slice, &mut name, value_offset)?,
-                    2 => phone = Some(decode_message_field(&mut slice)?),
+                    1 => ProtoString::decode_into(&mut slice, &mut dst.name, value_offset)?,
+                    2 => dst.phone = Some(decode_message_field(&mut slice)?),
                     _ => skip_field(wire_type, &mut slice)?,
                 }
             }
-            Ok(Person { buf, name, phone })
+            dst.buf = buf;
+            Ok(())
         }
 
         fn encode_message<B: bytes::BufMut>(&self, buf: &mut B) {

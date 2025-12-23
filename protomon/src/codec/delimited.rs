@@ -149,7 +149,7 @@ impl ProtoType for String {
 }
 
 impl ProtoDecode for String {
-    #[inline]
+    #[inline(always)]
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,
         dst: &mut Self,
@@ -159,11 +159,13 @@ impl ProtoDecode for String {
         if buf.remaining() < len {
             return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
         }
-        let data = buf.copy_to_bytes(len);
 
-        // Validate UTF-8 and convert to String.
-        let s = std::str::from_utf8(&data).map_err(|_| DecodeErrorKind::InvalidUtf8)?;
-        *dst = s.to_owned();
+        // Allocate uninitialized Vec and copy directly - avoids zero-init overhead
+        let mut vec = Vec::with_capacity(len);
+        // SAFETY: We're about to fill exactly `len` bytes via copy_to_slice
+        unsafe { vec.set_len(len) };
+        buf.copy_to_slice(&mut vec);
+        *dst = String::from_utf8(vec).map_err(|_| DecodeErrorKind::InvalidUtf8)?;
 
         Ok(())
     }
