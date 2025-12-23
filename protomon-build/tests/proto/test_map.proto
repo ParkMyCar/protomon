@@ -1,0 +1,28 @@
+// Test proto file for map field generation.
+syntax = "proto3";
+
+import "protomon/extensions.proto";
+
+// A simple message to use as a map value.
+message Person {
+  string name = 1;
+  int32 age = 2;
+}
+
+// Message with various map fields.
+message MapContainer {
+  // Default map (BTreeMap)
+  map<string, int32> scores = 1;
+
+  // Explicit BTreeMap
+  map<string, string> labels = 2 [(protomon.map_type) = "btree"];
+
+  // HashMap (requires std feature)
+  map<int32, string> names = 3 [(protomon.map_type) = "hash"];
+
+  // Map with message value
+  map<string, Person> people = 4;
+
+  // Map with int64 key
+  map<int64, bool> flags = 5;
+}

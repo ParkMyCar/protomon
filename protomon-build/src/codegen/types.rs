@@ -96,7 +96,7 @@ pub fn proto_type_to_rust(
         ));
     }
 
-    let base_type = scalar_type_to_rust(ctx, proto_type, type_name, is_lazy, fixed_array, use_vec)?;
+    let base_type = scalar_type_to_rust_inner(ctx, proto_type, type_name, is_lazy, fixed_array, use_vec)?;
 
     Ok(RustType {
         base_type,
@@ -107,12 +107,48 @@ pub fn proto_type_to_rust(
     })
 }
 
+/// Map proto type to Rust type for map keys.
+///
+/// Map keys can only be integral types or strings (not floats, bytes, or messages).
+pub fn map_key_type_to_rust(proto_type: Type) -> Result<TokenStream, Error> {
+    let tokens = match proto_type {
+        Type::Int32 => quote!(i32),
+        Type::Int64 => quote!(i64),
+        Type::Uint32 => quote!(u32),
+        Type::Uint64 => quote!(u64),
+        Type::Sint32 => quote!(protomon::codec::Sint32),
+        Type::Sint64 => quote!(protomon::codec::Sint64),
+        Type::Fixed32 => quote!(protomon::codec::Fixed32),
+        Type::Fixed64 => quote!(protomon::codec::Fixed64),
+        Type::Sfixed32 => quote!(protomon::codec::Sfixed32),
+        Type::Sfixed64 => quote!(protomon::codec::Sfixed64),
+        Type::Bool => quote!(bool),
+        Type::String => quote!(String),
+        _ => {
+            return Err(Error::InvalidOption(format!(
+                "Invalid map key type {:?}. Map keys must be integral types, bool, or string.",
+                proto_type
+            )));
+        }
+    };
+    Ok(tokens)
+}
+
+/// Map proto scalar/message type to base Rust type (public version for map values).
+pub fn scalar_type_to_rust(
+    ctx: &GenerationContext,
+    proto_type: Type,
+    type_name: Option<&str>,
+) -> Result<TokenStream, Error> {
+    scalar_type_to_rust_inner(ctx, proto_type, type_name, false, 0, false)
+}
+
 /// Map proto scalar/message type to base Rust type.
 ///
 /// For message types, `is_lazy` controls whether to wrap in `LazyMessage<T>`.
 /// For bytes types, `fixed_array` > 0 uses `[u8; N]` instead of `ProtoBytes`,
 /// and `use_vec` uses `Vec<u8>` instead of `ProtoBytes`.
-fn scalar_type_to_rust(
+fn scalar_type_to_rust_inner(
     ctx: &GenerationContext,
     proto_type: Type,
     type_name: Option<&str>,

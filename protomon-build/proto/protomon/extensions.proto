@@ -20,7 +20,8 @@
 //     50002 - boxed: Wrap field in Box<T>
 //     50003 - lazy: Wrap message in LazyMessage<T>
 //     50004 - fixed_array: Use [u8; N] for bytes fields
-//     50005-50009 - Reserved for future field options
+//     50005 - map_type: Map type ("btree" or "hash") for map fields
+//     50006-50009 - Reserved for future field options
 //     50010-50019 - Reserved for future message options
 //     50020-50029 - Reserved for future enum options
 //     50030-50039 - Reserved for future file options
@@ -59,6 +60,14 @@ extend google.protobuf.FieldOptions {
   // Only valid on bytes fields; errors if used on other field types.
   // Example: bytes hash = 1 [(protomon.fixed_array) = 32];  // [u8; 32]
   uint32 fixed_array = 50004;
+
+  // Map type to use for map fields.
+  // Values: "btree" (default) or "hash".
+  // BTreeMap is the default because it only requires `alloc`.
+  // HashMap requires the `std` feature in protomon.
+  // Only valid on map fields; errors if used on other field types.
+  // Example: map<string, int32> scores = 1 [(protomon.map_type) = "hash"];
+  string map_type = 50005;
 }
 
 // Oneof-level options for customizing generated Rust code.

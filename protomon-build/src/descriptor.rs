@@ -209,6 +209,11 @@ pub struct FieldOptions {
     /// Extension field 50004. Value of 0 means not set.
     #[proto(tag = 50004)]
     pub fixed_array: u32,
+
+    /// Map type to use for map fields: "btree" (default) or "hash".
+    /// Extension field 50005.
+    #[proto(tag = 50005, optional)]
+    pub map_type: Option<String>,
 }
 
 /// Field type enumeration.

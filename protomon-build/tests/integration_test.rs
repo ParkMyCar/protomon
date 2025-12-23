@@ -286,3 +286,52 @@ fn test_oneof_generation() {
     }
     "#);
 }
+
+#[test]
+fn test_map_generation() {
+    let out_dir = tempdir().expect("Failed to create temp dir");
+
+    Config::new()
+        .out_dir(out_dir.path())
+        .protoc_arg("-I../../proto")  // Include protomon extensions
+        .compile_protos(
+            &["tests/proto/test_map.proto"],
+            &["tests/proto/"],
+        )
+        .expect("Failed to compile protos");
+
+    let test_rs = out_dir.path().join("test_map.rs");
+    let content = fs::read_to_string(&test_rs).expect("Failed to read test_map.rs");
+
+    // Snapshot the generated code - this captures:
+    // - Default map type (BTreeMap)
+    // - Explicit btree map type
+    // - HashMap with hash map type
+    // - Map with message values
+    // - Map with various key types
+    insta::assert_snapshot!(content, @r#"
+    #![allow(clippy::all)]
+    #![allow(warnings)]
+    #![allow(missing_docs)]
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct Person {
+        #[proto(tag = 1)]
+        pub name: protomon::codec::ProtoString,
+        #[proto(tag = 2)]
+        pub age: i32,
+    }
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct MapContainer {
+        #[proto(tag = 1, map)]
+        pub scores: alloc::collections::BTreeMap<String, i32>,
+        #[proto(tag = 2, map)]
+        pub labels: alloc::collections::BTreeMap<String, protomon::codec::ProtoString>,
+        #[proto(tag = 3, map)]
+        pub names: std::collections::HashMap<i32, protomon::codec::ProtoString>,
+        #[proto(tag = 4, map)]
+        pub people: alloc::collections::BTreeMap<String, Person>,
+        #[proto(tag = 5, map)]
+        pub flags: alloc::collections::BTreeMap<i64, bool>,
+    }
+    "#);
+}

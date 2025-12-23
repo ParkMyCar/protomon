@@ -2,12 +2,15 @@
 
 mod default_check;
 mod delimited;
+#[cfg(feature = "alloc")]
+mod map;
 mod message;
 mod oneof;
 mod wrappers;
 #[cfg(feature = "alloc")]
 mod repeated;
 mod scalar;
+mod wrappers;
 
 use crate::error::DecodeErrorKind;
 use crate::wire::WireType;
@@ -65,3 +68,8 @@ pub use message::{
 
 // Re-export oneof types and helpers
 pub use oneof::{decode_oneof_field, encode_oneof_field, encoded_oneof_field_len, ProtoOneof};
+
+// Re-export map field types
+#[cfg(feature = "alloc")]
+pub use map::{ProtoMap, ProtoMapKey};
+

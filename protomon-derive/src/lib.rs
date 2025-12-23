@@ -46,6 +46,8 @@ struct FieldInfo<'a> {
     tag: u32,
     repeated: bool,
     optional: bool,
+    /// If this is a map field (BTreeMap or HashMap).
+    map: bool,
     /// If this is a oneof field, contains all tags that belong to this oneof.
     oneof_tags: Option<Vec<u32>>,
     /// If this is a required (non-nullable) oneof field.
@@ -78,6 +80,7 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
                 tag: attrs.tag,
                 repeated: attrs.repeated,
                 optional: attrs.optional,
+                map: attrs.map,
                 oneof_tags: attrs.oneof_tags,
                 oneof_required: attrs.oneof_required,
             })
@@ -139,15 +142,17 @@ struct ProtoFieldAttrs {
     tag: u32,
     repeated: bool,
     optional: bool,
+    map: bool,
     oneof_tags: Option<Vec<u32>>,
     oneof_required: bool,
 }
 
-/// Parse #[proto(tag = N, repeated, optional, oneof, tags = "1, 2, 3", required)] attributes.
+/// Parse #[proto(tag = N, repeated, optional, map, oneof, tags = "1, 2, 3", required)] attributes.
 fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
     let mut tag = None;
     let mut repeated = false;
     let mut optional = false;
+    let mut map = false;
     let mut is_oneof = false;
     let mut oneof_tags_str: Option<String> = None;
     let mut required = false;
@@ -162,6 +167,8 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
                     repeated = true;
                 } else if meta.path.is_ident("optional") {
                     optional = true;
+                } else if meta.path.is_ident("map") {
+                    map = true;
                 } else if meta.path.is_ident("oneof") {
                     is_oneof = true;
                 } else if meta.path.is_ident("tags") {
@@ -220,6 +227,7 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
         tag,
         repeated,
         optional,
+        map,
         oneof_tags,
         oneof_required: is_oneof && required,
     })
@@ -267,9 +275,16 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
         let fty = f.ty;
         let tag = f.tag;
 
-        Some(quote! {
-            #tag => <#fty as protomon::codec::ProtoDecode>::decode_into(&mut buf, &mut dst.#fname, value_offset)?,
-        })
+        if f.map {
+            // Map fields decode a single entry per tag occurrence
+            Some(quote! {
+                #tag => protomon::codec::ProtoMap::decode_entry(&mut dst.#fname, &mut buf)?,
+            })
+        } else {
+            Some(quote! {
+                #tag => <#fty as protomon::codec::ProtoDecode>::decode_into(&mut buf, &mut dst.#fname, value_offset)?,
+            })
+        }
     });
 
     // Generate match arms for optional oneof fields (field type is Option<T>)
@@ -372,6 +387,11 @@ fn generate_encode(fields: &[FieldInfo]) -> TokenStream2 {
             quote! {
                 protomon::codec::encode_oneof_field(&self.#fname, buf);
             }
+        } else if f.map {
+            // Map fields encode all entries with their field keys
+            quote! {
+                protomon::codec::ProtoMap::encode_map(&self.#fname, #tag, buf);
+            }
         } else if f.repeated {
             // Both Vec<T> and Repeated<T> implement ProtoRepeated
             quote! {
@@ -418,6 +438,11 @@ fn generate_len(fields: &[FieldInfo]) -> TokenStream2 {
             // Optional oneof fields use the specialized len helper
             quote! {
                 len += protomon::codec::encoded_oneof_field_len(&self.#fname);
+            }
+        } else if f.map {
+            // Map fields include their own field keys
+            quote! {
+                len += protomon::codec::ProtoMap::encoded_map_len(&self.#fname, #tag);
             }
         } else if f.repeated {
             // Both Vec<T> and Repeated<T> implement ProtoRepeated

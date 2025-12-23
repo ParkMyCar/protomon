@@ -16,6 +16,7 @@ proptest = { version = "1", features = ["attr-macro"] }
 [features]
 default = ["alloc", "smallvec", "derive"]
 alloc = []
+std = ["alloc"]  # std implies alloc, enables HashMap support
 derive = ["dep:protomon-derive"]
 
 [[bench]]

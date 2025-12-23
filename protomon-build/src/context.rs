@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::codegen::{find_recursive_fields, RecursiveField};
 use crate::config::Config;
-use crate::descriptor::{DescriptorProto, FileDescriptorSet};
+use crate::descriptor::{DescriptorProto, FieldDescriptorProto, FileDescriptorSet};
 
 /// Information about a type in the registry.
 #[derive(Debug, Clone)]
@@ -20,6 +20,15 @@ pub struct TypeInfo {
     pub rust_module: String,
 }
 
+/// Information about a map entry message type.
+#[derive(Debug, Clone)]
+pub struct MapEntryInfo {
+    /// The key field descriptor.
+    pub key_field: FieldDescriptorProto,
+    /// The value field descriptor.
+    pub value_field: FieldDescriptorProto,
+}
+
 /// Context for code generation, including type registry.
 pub struct GenerationContext<'a> {
     /// The configuration.
@@ -28,12 +37,15 @@ pub struct GenerationContext<'a> {
     pub type_registry: HashMap<String, TypeInfo>,
     /// Fields that need to be boxed due to recursive type cycles.
     pub recursive_fields: HashSet<RecursiveField>,
+    /// Map from fully-qualified map entry type name -> map entry info.
+    pub map_entries: HashMap<String, MapEntryInfo>,
 }
 
 impl<'a> GenerationContext<'a> {
     /// Create a new generation context.
     pub fn new(config: &'a Config, fds: &FileDescriptorSet) -> Self {
         let mut type_registry = HashMap::new();
+        let mut map_entries = HashMap::new();
 
         for file in &fds.file {
             let file_name = file.name.clone().unwrap_or_default();
@@ -48,13 +60,13 @@ impl<'a> GenerationContext<'a> {
 
             // Register top-level messages
             for message in &file.message_type {
-                register_message(&mut type_registry, &file_name, &rust_module, &prefix, message);
+                register_message(&mut type_registry, &mut map_entries, &file_name, &rust_module, &prefix, message);
             }
 
             // Register top-level enums
             for enum_type in &file.enum_type {
                 if let Some(name) = &enum_type.name {
-                    let full_name = format!("{}{}", prefix.trim_end_matches('.'), name);
+                    let full_name = format!("{}{}", prefix, name);
                     type_registry.insert(
                         full_name,
                         TypeInfo {
@@ -75,7 +87,13 @@ impl<'a> GenerationContext<'a> {
             config,
             type_registry,
             recursive_fields,
+            map_entries,
         }
+    }
+
+    /// Get map entry info if the type is a map entry.
+    pub fn get_map_entry(&self, type_name: &str) -> Option<&MapEntryInfo> {
+        self.map_entries.get(type_name)
     }
 
     /// Check if a field needs to be boxed due to recursive type cycles.
@@ -112,13 +130,40 @@ impl<'a> GenerationContext<'a> {
 /// Register a message and its nested types in the registry.
 fn register_message(
     registry: &mut HashMap<String, TypeInfo>,
+    map_entries: &mut HashMap<String, MapEntryInfo>,
     file_name: &str,
     rust_module: &str,
     prefix: &str,
     message: &DescriptorProto,
 ) {
     if let Some(name) = &message.name {
-        let full_name = format!("{}{}", prefix.trim_end_matches('.'), name);
+        // Build fully-qualified name with proper dot separators
+        // prefix is like "." or ".package." or ".Parent."
+        let full_name = format!("{}{}", prefix, name);
+
+        // Check if this is a map entry type
+        let is_map_entry = message
+            .options
+            .as_ref()
+            .and_then(|o| o.map_entry)
+            .unwrap_or(false);
+
+        if is_map_entry {
+            // Extract key (tag 1) and value (tag 2) fields
+            let key_field = message.field.iter().find(|f| f.number == Some(1));
+            let value_field = message.field.iter().find(|f| f.number == Some(2));
+
+            if let (Some(key), Some(value)) = (key_field, value_field) {
+                map_entries.insert(
+                    full_name.clone(),
+                    MapEntryInfo {
+                        key_field: key.clone(),
+                        value_field: value.clone(),
+                    },
+                );
+            }
+        }
+
         registry.insert(
             full_name.clone(),
             TypeInfo {
@@ -129,11 +174,12 @@ fn register_message(
             },
         );
 
+        // Nested prefix includes parent name with trailing dot
         let nested_prefix = format!("{}.", full_name);
 
         // Register nested messages
         for nested in &message.nested_type {
-            register_message(registry, file_name, rust_module, &nested_prefix, nested);
+            register_message(registry, map_entries, file_name, rust_module, &nested_prefix, nested);
         }
 
         // Register nested enums
