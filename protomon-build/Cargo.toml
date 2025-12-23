@@ -1,0 +1,23 @@
+[package]
+name = "protomon-build"
+version = "0.1.0"
+edition = "2021"
+description = "Build-time code generator for protomon from protobuf schemas"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/parker/protomon"
+keywords = ["protobuf", "serialization", "codegen"]
+categories = ["encoding", "development-tools::build-utils"]
+include = ["src/**/*", "proto/**/*", "Cargo.toml", "README.md", "LICENSE*"]
+
+[dependencies]
+bytes = "1"
+proc-macro2 = "1"
+quote = "1"
+syn = "2"
+prettyplease = "0.2"
+which = "7"
+tempfile = "3"
+protomon = { path = "../protomon", default-features = false }
+
+[dev-dependencies]
+protomon = { path = "../protomon", features = ["derive"] }

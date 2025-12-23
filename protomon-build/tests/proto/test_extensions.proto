@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package test_extensions;
+
+import "protomon/extensions.proto";
+
+message Container {
+  // Regular repeated field (uses Repeated<T>)
+  repeated string regular_tags = 1;
+
+  // Vec repeated field (uses Vec<T>)
+  repeated string vec_tags = 2 [(protomon.vec) = true];
+
+  // Boxed field (for recursive types)
+  optional Container child = 3 [(protomon.boxed) = true];
+
+  // Lazy message field (uses LazyMessage<T>)
+  optional Container lazy_child = 4 [(protomon.lazy) = true];
+
+  // Regular message field (no LazyMessage wrapper)
+  optional Container eager_child = 5;
+
+  // Combined: lazy + boxed
+  optional Container lazy_boxed_child = 6 [(protomon.lazy) = true, (protomon.boxed) = true];
+}

@@ -1,0 +1,49 @@
+// Protomon code generation extensions.
+//
+// Import this file in your .proto files to use protomon-specific options:
+//
+//   import "protomon/extensions.proto";
+//
+//   message MyMessage {
+//     repeated string tags = 1 [(protomon.vec) = true];
+//     optional MyMessage child = 2 [(protomon.boxed) = true];
+//   }
+//
+// Extension Field Number Range:
+//   Protomon reserves field numbers 50001-50099 for its extensions.
+//   This range is within the user-defined extension range (1-536870911)
+//   and avoids conflicts with Google's reserved ranges.
+//
+//   Current allocations:
+//     50001 - vec: Use Vec<T> for repeated fields
+//     50002 - boxed: Wrap field in Box<T>
+//     50003 - lazy: Wrap message in LazyMessage<T>
+//     50004-50009 - Reserved for future field options
+//     50010-50019 - Reserved for future message options
+//     50020-50029 - Reserved for future enum options
+//     50030-50039 - Reserved for future file options
+
+syntax = "proto3";
+
+package protomon;
+
+import "google/protobuf/descriptor.proto";
+
+// Field-level options for customizing generated Rust code.
+extend google.protobuf.FieldOptions {
+  // Use Vec<T> instead of Repeated<T> for this repeated field.
+  // Repeated<T> is lazy and zero-copy, Vec<T> is eager and owns the data.
+  // Only valid on repeated fields; errors if used on singular fields.
+  bool vec = 50001;
+
+  // Wrap the field type in Box<T>.
+  // Useful for breaking recursive type cycles in message definitions.
+  // For optional fields: generates Option<Box<T>> (None doesn't allocate).
+  // For repeated fields: generates Vec<Box<T>> or Repeated<Box<T>>.
+  bool boxed = 50002;
+
+  // Wrap the message field in LazyMessage<T> for lazy/zero-copy decoding.
+  // The message is not decoded until accessed, and borrows from the input buffer.
+  // Only valid on message-type fields; errors if used on scalar fields.
+  bool lazy = 50003;
+}
