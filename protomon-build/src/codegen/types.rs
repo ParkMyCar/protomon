@@ -64,10 +64,10 @@ pub fn proto_type_to_rust(
     // Box if explicitly requested OR if auto-detected as recursive
     let is_boxed = explicit_boxed || auto_box;
 
-    // Validate that vec option is only used on repeated fields
-    if use_vec && !is_repeated {
+    // Validate that vec option is only used on repeated fields or bytes fields
+    if use_vec && !is_repeated && proto_type != Type::Bytes {
         return Err(Error::InvalidOption(
-            "[(protomon.vec) = true] can only be used on repeated fields".into(),
+            "[(protomon.vec) = true] can only be used on repeated fields or bytes fields".into(),
         ));
     }
 
@@ -96,7 +96,7 @@ pub fn proto_type_to_rust(
         ));
     }
 
-    let base_type = scalar_type_to_rust(ctx, proto_type, type_name, is_lazy, fixed_array)?;
+    let base_type = scalar_type_to_rust(ctx, proto_type, type_name, is_lazy, fixed_array, use_vec)?;
 
     Ok(RustType {
         base_type,
@@ -110,13 +110,15 @@ pub fn proto_type_to_rust(
 /// Map proto scalar/message type to base Rust type.
 ///
 /// For message types, `is_lazy` controls whether to wrap in `LazyMessage<T>`.
-/// For bytes types, `fixed_array` > 0 uses `[u8; N]` instead of `ProtoBytes`.
+/// For bytes types, `fixed_array` > 0 uses `[u8; N]` instead of `ProtoBytes`,
+/// and `use_vec` uses `Vec<u8>` instead of `ProtoBytes`.
 fn scalar_type_to_rust(
     ctx: &GenerationContext,
     proto_type: Type,
     type_name: Option<&str>,
     is_lazy: bool,
     fixed_array: u32,
+    use_vec: bool,
 ) -> Result<TokenStream, Error> {
     let tokens = match proto_type {
         // Integers - standard encoding
@@ -148,6 +150,8 @@ fn scalar_type_to_rust(
             if fixed_array > 0 {
                 let size = fixed_array as usize;
                 quote!([u8; #size])
+            } else if use_vec {
+                quote!(Vec<u8>)
             } else {
                 quote!(protomon::codec::ProtoBytes)
             }

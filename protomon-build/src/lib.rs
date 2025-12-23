@@ -30,6 +30,9 @@
 //!
 //!   // Use fixed-size array `[u8; N]` for bytes fields (max N=32)
 //!   bytes hash = 4 [(protomon.fixed_array) = 32];  // [u8; 32]
+//!
+//!   // Use `Vec<u8>` instead of `ProtoBytes` for bytes fields
+//!   bytes payload = 5 [(protomon.vec) = true];  // Vec<u8>
 //! }
 //! ```
 //!

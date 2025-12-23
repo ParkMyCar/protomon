@@ -32,9 +32,12 @@ import "google/protobuf/descriptor.proto";
 
 // Field-level options for customizing generated Rust code.
 extend google.protobuf.FieldOptions {
-  // Use Vec<T> instead of Repeated<T> for this repeated field.
-  // Repeated<T> is lazy and zero-copy, Vec<T> is eager and owns the data.
-  // Only valid on repeated fields; errors if used on singular fields.
+  // Use Vec<T> instead of the default type.
+  // For repeated fields: Use Vec<T> instead of Repeated<T>.
+  //   Repeated<T> is lazy and zero-copy, Vec<T> is eager and owns the data.
+  // For bytes fields: Use Vec<u8> instead of ProtoBytes.
+  //   ProtoBytes wraps bytes::Bytes, Vec<u8> is a standard Rust vector.
+  // Only valid on repeated fields or bytes fields.
   bool vec = 50001;
 
   // Wrap the field type in Box<T>.

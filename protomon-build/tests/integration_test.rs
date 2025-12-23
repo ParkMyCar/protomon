@@ -115,6 +115,12 @@ fn test_compile_with_extensions() {
         content.contains("pub data: protomon::codec::ProtoBytes"),
         "Regular bytes field should use ProtoBytes"
     );
+
+    // Check that bytes field with vec option uses Vec<u8>
+    assert!(
+        content.contains("pub vec_data: Vec<u8>"),
+        "Field with [(protomon.vec) = true] on bytes should generate Vec<u8>"
+    );
 }
 
 #[test]

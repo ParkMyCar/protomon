@@ -31,4 +31,7 @@ message Container {
 
   // Fixed-size array with different size (e.g., UUID)
   bytes uuid = 9 [(protomon.fixed_array) = 16];
+
+  // Vec<u8> for bytes field (uses Vec<u8> instead of ProtoBytes)
+  bytes vec_data = 10 [(protomon.vec) = true];
 }
