@@ -160,12 +160,43 @@ impl ProtoDecode for String {
             return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
         }
 
-        // Allocate uninitialized Vec and copy directly - avoids zero-init overhead
-        let mut vec = Vec::with_capacity(len);
-        // SAFETY: We're about to fill exactly `len` bytes via copy_to_slice
-        unsafe { vec.set_len(len) };
-        buf.copy_to_slice(&mut vec);
-        *dst = String::from_utf8(vec).map_err(|_| DecodeErrorKind::InvalidUtf8)?;
+        // Use a guard to safely handle uninitialized memory.
+        //
+        // If copy_to_slice panics, the guard ensures we don't expose uninitialized bytes.
+        struct Guard<'a> {
+            buf: &'a mut Vec<u8>,
+        }
+        impl Drop for Guard<'_> {
+            // SAFETY: If the guard is dropped, e.g. a panic, clear the Vec so we don't
+            // expose non-valid UTF-8.
+            fn drop(&mut self) {
+                self.buf.clear();
+            }
+        }
+
+        // SAFETY: We wrap the mutable reference in a guard which automatically clears
+        // the buffer if we have non-valid UTF-8.
+        let str_buf = unsafe { dst.as_mut_vec() };
+        let guard = Guard { buf: str_buf };
+
+        // It's possible for a field to show up multiple times in an encoded payload. We
+        // clear the buffer incase we've seen this field before.
+        guard.buf.clear();
+        guard.buf.reserve(len);
+        // SAFETY: reserve guarantees capacity >= len, guard clears on panic/invalid UTF-8.
+        unsafe { guard.buf.set_len(len) };
+
+        buf.copy_to_slice(&mut guard.buf[..len]);
+
+        // Validate that the buffer is UTF-8.
+        match core::str::from_utf8(&guard.buf[..]) {
+            // We have valid UTF-8! We can forget the guard.
+            Ok(_) => core::mem::forget(guard),
+            // Invalid, the drop guard will clear the memory.
+            Err(_) => {
+                return Err(DecodeErrorKind::InvalidUtf8);
+            }
+        }
 
         Ok(())
     }
@@ -200,25 +231,28 @@ impl ProtoDecode for Vec<u8> {
             return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
         }
 
-        dst.clear();
-        dst.reserve(len);
-        // Copy bytes from buffer into dst.
-        let chunk = buf.chunk();
-        if chunk.len() >= len {
-            // Fast path: all bytes in one chunk.
-            dst.extend_from_slice(&chunk[..len]);
-            buf.advance(len);
-        } else {
-            // Slow path: bytes span multiple chunks.
-            let mut remaining = len;
-            while remaining > 0 {
-                let chunk = buf.chunk();
-                let to_copy = chunk.len().min(remaining);
-                dst.extend_from_slice(&chunk[..to_copy]);
-                buf.advance(to_copy);
-                remaining -= to_copy;
+        // Use a guard to safely handle uninitialized memory.
+        struct Guard<'a> {
+            buf: &'a mut Vec<u8>,
+        }
+        impl Drop for Guard<'_> {
+            fn drop(&mut self) {
+                self.buf.clear();
             }
         }
+
+        let guard = Guard { buf: dst };
+
+        // Clear in case this field appears multiple times.
+        guard.buf.clear();
+        guard.buf.reserve(len);
+        // SAFETY: reserve guarantees capacity >= len, guard clears on panic.
+        unsafe { guard.buf.set_len(len) };
+
+        buf.copy_to_slice(&mut guard.buf[..len]);
+
+        // Success, defuse the guard.
+        core::mem::forget(guard);
 
         Ok(())
     }
