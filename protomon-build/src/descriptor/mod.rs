@@ -115,6 +115,28 @@ pub struct EnumValueDescriptorProto {
 pub struct OneofDescriptorProto {
     /// The oneof name.
     pub name: Option<String>, // field 1
+    /// Oneof options (includes protomon extensions).
+    pub options: Option<OneofOptions>, // field 2
+}
+
+/// Options for a oneof.
+/// Corresponds to google.protobuf.OneofOptions with protomon extensions.
+#[derive(Debug, Clone, Default)]
+pub struct OneofOptions {
+    // Protomon extensions (field numbers 50000-50049 reserved for oneof options)
+
+    /// Whether the oneof is nullable (wrapped in `Option<T>`).
+    /// Default is true. When false, decoding fails if oneof is missing.
+    /// Extension field 50000.
+    pub nullable: Option<bool>,
+}
+
+impl OneofOptions {
+    /// Returns whether this oneof is nullable.
+    /// Defaults to true if not explicitly set.
+    pub fn is_nullable(&self) -> bool {
+        self.nullable.unwrap_or(true)
+    }
 }
 
 /// Options for a message type.

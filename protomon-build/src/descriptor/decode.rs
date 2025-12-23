@@ -27,6 +27,9 @@ const EXT_FIELD_LAZY: u32 = 50003;
 /// Extension field number for `fixed_array` option: use `[u8; N]` for bytes fields.
 const EXT_FIELD_FIXED_ARRAY: u32 = 50004;
 
+/// Extension field number for `nullable` option: make oneof nullable.
+const EXT_ONEOF_NULLABLE: u32 = 50000;
+
 /// Decode a FileDescriptorSet from protobuf binary data.
 pub fn decode_file_descriptor_set(data: &[u8]) -> Result<FileDescriptorSet, Error> {
     let mut buf = data;
@@ -225,11 +228,35 @@ fn decode_oneof_descriptor_proto(data: &[u8]) -> Result<OneofDescriptorProto, Er
         let (field_number, wire_type) = decode_key(&mut buf)?;
         match field_number {
             1 => odp.name = Some(decode_string(&mut buf)?),
+            2 => {
+                let len = decode_len(&mut buf)?;
+                let msg_data = &buf[..len];
+                buf.advance(len);
+                odp.options = Some(decode_oneof_options(msg_data)?);
+            }
             _ => skip_field(&mut buf, wire_type)?,
         }
     }
 
     Ok(odp)
+}
+
+/// Decode OneofOptions with protomon extensions.
+fn decode_oneof_options(data: &[u8]) -> Result<OneofOptions, Error> {
+    let mut buf = data;
+    let mut opts = OneofOptions::default();
+
+    while buf.has_remaining() {
+        let (field_number, wire_type) = decode_key(&mut buf)?;
+        match field_number {
+            // Protomon extensions
+            EXT_ONEOF_NULLABLE => opts.nullable = Some(decode_varint(&mut buf)? != 0),
+            // Skip all other fields (standard protobuf OneofOptions fields)
+            _ => skip_field(&mut buf, wire_type)?,
+        }
+    }
+
+    Ok(opts)
 }
 
 /// Decode MessageOptions.

@@ -4,6 +4,7 @@ mod enumeration;
 mod field;
 mod message;
 mod module;
+mod oneof;
 mod recursion;
 mod types;
 

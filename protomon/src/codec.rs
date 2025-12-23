@@ -3,6 +3,7 @@
 mod default_check;
 mod delimited;
 mod message;
+mod oneof;
 mod wrappers;
 #[cfg(feature = "alloc")]
 mod repeated;
@@ -61,3 +62,6 @@ pub use message::{
     decode_message_field, encode_message_field, encoded_message_field_len, skip_len_field,
     LazyMessage, ProtoMessage,
 };
+
+// Re-export oneof types and helpers
+pub use oneof::{decode_oneof_field, encode_oneof_field, encoded_oneof_field_len, ProtoOneof};

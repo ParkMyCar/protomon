@@ -15,6 +15,7 @@
 //   and avoids conflicts with Google's reserved ranges.
 //
 //   Current allocations:
+//     50000 - nullable: Make oneof nullable (default true)
 //     50001 - vec: Use Vec<T> for repeated fields
 //     50002 - boxed: Wrap field in Box<T>
 //     50003 - lazy: Wrap message in LazyMessage<T>
@@ -23,6 +24,7 @@
 //     50010-50019 - Reserved for future message options
 //     50020-50029 - Reserved for future enum options
 //     50030-50039 - Reserved for future file options
+//     50040-50049 - Reserved for future oneof options
 
 syntax = "proto3";
 
@@ -57,4 +59,22 @@ extend google.protobuf.FieldOptions {
   // Only valid on bytes fields; errors if used on other field types.
   // Example: bytes hash = 1 [(protomon.fixed_array) = 32];  // [u8; 32]
   uint32 fixed_array = 50004;
+}
+
+// Oneof-level options for customizing generated Rust code.
+extend google.protobuf.OneofOptions {
+  // Whether the oneof field is nullable (wrapped in Option<T>).
+  // Default is true: generates `pub widget: Option<Widget>`.
+  // When set to false: generates `pub widget: Widget` and decoding fails
+  // if the oneof is missing from wire data.
+  //
+  // Example:
+  //   message MyMessage {
+  //     oneof widget {
+  //       option (protomon.nullable) = false;
+  //       int32 int_field = 2;
+  //       string string_field = 3;
+  //     }
+  //   }
+  bool nullable = 50000;
 }

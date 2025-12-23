@@ -9,6 +9,7 @@ use crate::Error;
 
 use super::enumeration::generate_enum;
 use super::field::generate_field;
+use super::oneof::{collect_oneofs, generate_oneof_enum, generate_oneof_field};
 
 /// Generate Rust struct for a proto message.
 pub fn generate_message(
@@ -25,22 +26,48 @@ pub fn generate_message(
         format!("{}.{}", parent_path, name)
     };
 
-    // Generate fields
+    // Collect oneofs (excluding proto3 optional synthetic oneofs)
+    let oneofs = collect_oneofs(message);
+
+    // Build a set of field indices that belong to real oneofs
+    let oneof_field_indices: std::collections::HashSet<i32> = oneofs
+        .iter()
+        .flat_map(|o| o.fields.iter().filter_map(|f| f.number))
+        .collect();
+
+    // Generate regular fields (excluding oneof fields)
     // Note: In proto3, optional fields use synthetic oneofs for presence tracking.
     // We include fields with oneof_index if they have proto3_optional set to true.
-    // Real oneof fields (not proto3 optional) are skipped for now.
     let fields: Vec<TokenStream> = message
         .field
         .iter()
         .filter(|f| {
-            // Include if no oneof_index, or if it's a proto3 optional field
-            f.oneof_index.is_none() || f.proto3_optional.unwrap_or(false)
+            let field_num = f.number.unwrap_or(-1);
+            // Include if:
+            // - No oneof_index, OR
+            // - It's a proto3 optional field (synthetic oneof), OR
+            // - It's NOT part of a real oneof (checked via field number)
+            f.oneof_index.is_none()
+                || f.proto3_optional.unwrap_or(false)
+                || !oneof_field_indices.contains(&field_num)
         })
         .map(|f| generate_field(ctx, &full_path, f, is_proto3))
         .collect::<Result<Vec<_>, _>>()?;
 
+    // Generate oneof fields
+    let oneof_fields: Vec<TokenStream> = oneofs
+        .iter()
+        .map(|o| generate_oneof_field(name, o))
+        .collect::<Result<Vec<_>, _>>()?;
+
     // Generate nested types
     let mut nested = TokenStream::new();
+
+    // Oneof enums (generated in the nested module)
+    for oneof in &oneofs {
+        let oneof_enum = generate_oneof_enum(ctx, oneof, is_proto3)?;
+        nested.extend(oneof_enum);
+    }
 
     // Nested enums
     for enum_type in &message.enum_type {
@@ -79,6 +106,7 @@ pub fn generate_message(
         #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
         pub struct #struct_name {
             #(#fields)*
+            #(#oneof_fields)*
         }
 
         #nested_mod

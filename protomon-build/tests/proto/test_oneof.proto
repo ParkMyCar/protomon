@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package test_oneof;
+
+import "protomon/extensions.proto";
+
+// Message with a nullable oneof (default)
+message NullableOneofMessage {
+  string name = 1;
+
+  oneof widget {
+    int32 int_value = 2;
+    string string_value = 3;
+  }
+}
+
+// Message with a non-nullable (required) oneof
+message RequiredOneofMessage {
+  string name = 1;
+
+  oneof widget {
+    option (protomon.nullable) = false;
+    int32 int_value = 2;
+    string string_value = 3;
+  }
+}
+
+// Message with both nullable and non-nullable oneofs
+message MixedOneofMessage {
+  string name = 1;
+
+  oneof nullable_widget {
+    int32 nullable_int = 2;
+    string nullable_string = 3;
+  }
+
+  oneof required_widget {
+    option (protomon.nullable) = false;
+    int32 required_int = 4;
+    string required_string = 5;
+  }
+}

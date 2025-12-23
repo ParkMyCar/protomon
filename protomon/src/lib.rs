@@ -10,4 +10,4 @@ mod util;
 pub mod wire;
 
 #[cfg(feature = "derive")]
-pub use protomon_derive::ProtoMessage;
+pub use protomon_derive::{ProtoMessage, ProtoOneof};

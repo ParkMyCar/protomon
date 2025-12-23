@@ -190,3 +190,99 @@ fn test_recursive_type_detection() {
     }
     ");
 }
+
+#[test]
+fn test_oneof_generation() {
+    let out_dir = tempdir().expect("Failed to create temp dir");
+
+    Config::new()
+        .out_dir(out_dir.path())
+        .compile_protos(
+            &["tests/proto/test_oneof.proto"],
+            &["tests/proto/"],
+        )
+        .expect("Failed to compile protos");
+
+    let test_rs = out_dir.path().join("test_oneof.rs");
+    let content = fs::read_to_string(&test_rs).expect("Failed to read test_oneof.rs");
+
+    // Snapshot the generated code - this captures:
+    // - Nullable oneofs: Option<EnumType>
+    // - Non-nullable oneofs: EnumType with required attribute
+    // - Oneof enum generation with ProtoOneof derive
+    insta::assert_snapshot!(content, @r#"
+    #![allow(clippy::all)]
+    #![allow(warnings)]
+    #![allow(missing_docs)]
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct NullableOneofMessage {
+        #[proto(tag = 1)]
+        pub name: protomon::codec::ProtoString,
+        #[proto(oneof, tags = "2, 3")]
+        pub widget: Option<nullable_oneof_message::Widget>,
+    }
+    pub mod nullable_oneof_message {
+        use super::*;
+        #[derive(Debug, Clone, PartialEq, protomon::ProtoOneof)]
+        pub enum Widget {
+            #[proto(tag = 2u32)]
+            IntValue(i32),
+            #[proto(tag = 3u32)]
+            StringValue(protomon::codec::ProtoString),
+        }
+    }
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct RequiredOneofMessage {
+        #[proto(tag = 1)]
+        pub name: protomon::codec::ProtoString,
+        #[proto(oneof, tags = "2, 3", required)]
+        pub widget: required_oneof_message::Widget,
+    }
+    pub mod required_oneof_message {
+        use super::*;
+        #[derive(Debug, Clone, PartialEq, protomon::ProtoOneof)]
+        pub enum Widget {
+            #[proto(tag = 2u32)]
+            IntValue(i32),
+            #[proto(tag = 3u32)]
+            StringValue(protomon::codec::ProtoString),
+        }
+        impl Default for Widget {
+            fn default() -> Self {
+                Self::IntValue(Default::default())
+            }
+        }
+    }
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct MixedOneofMessage {
+        #[proto(tag = 1)]
+        pub name: protomon::codec::ProtoString,
+        #[proto(oneof, tags = "2, 3")]
+        pub nullable_widget: Option<mixed_oneof_message::NullableWidget>,
+        #[proto(oneof, tags = "4, 5", required)]
+        pub required_widget: mixed_oneof_message::RequiredWidget,
+    }
+    pub mod mixed_oneof_message {
+        use super::*;
+        #[derive(Debug, Clone, PartialEq, protomon::ProtoOneof)]
+        pub enum NullableWidget {
+            #[proto(tag = 2u32)]
+            NullableInt(i32),
+            #[proto(tag = 3u32)]
+            NullableString(protomon::codec::ProtoString),
+        }
+        #[derive(Debug, Clone, PartialEq, protomon::ProtoOneof)]
+        pub enum RequiredWidget {
+            #[proto(tag = 4u32)]
+            RequiredInt(i32),
+            #[proto(tag = 5u32)]
+            RequiredString(protomon::codec::ProtoString),
+        }
+        impl Default for RequiredWidget {
+            fn default() -> Self {
+                Self::RequiredInt(Default::default())
+            }
+        }
+    }
+    "#);
+}

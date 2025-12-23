@@ -10,6 +10,7 @@ pub enum DecodeErrorKind {
     InvalidUtf8,
     LengthMismatch { expected: u16, actual: u16 },
     ProgrammingError { reason: &'static str },
+    MissingRequiredOneof { field: &'static str },
 }
 
 impl fmt::Display for DecodeErrorKind {
@@ -38,6 +39,9 @@ impl fmt::Display for DecodeErrorKind {
             }
             DecodeErrorKind::ProgrammingError { reason } => {
                 write!(f, "programming error: '{reason}'")
+            }
+            DecodeErrorKind::MissingRequiredOneof { field } => {
+                write!(f, "missing required oneof field: '{field}'")
             }
         }
     }
