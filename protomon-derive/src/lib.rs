@@ -75,7 +75,7 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
         })
         .collect::<Result<Vec<_>>>()?;
 
-    let decode_impl = generate_decode(name, &field_info);
+    let decode_into_impl = generate_decode_into(&field_info);
     let encode_impl = generate_encode(&field_info);
     let len_impl = generate_len(&field_info);
 
@@ -102,13 +102,13 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
         }
 
         impl protomon::codec::ProtoMessage for #name {
-            #decode_impl
+            #decode_into_impl
             #encode_impl
             #len_impl
         }
 
         impl protomon::codec::ProtoDecode for #name {
-            #[inline]
+            #[inline(always)]
             fn decode_into<B: bytes::Buf>(
                 buf: &mut B,
                 dst: &mut Self,
@@ -119,7 +119,7 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
                 if buf.remaining() < len {
                     return Err(protomon::error::DecodeErrorKind::UnexpectedEndOfBuffer);
                 }
-                *dst = <Self as protomon::codec::ProtoMessage>::decode_message(buf.copy_to_bytes(len))?;
+                <Self as protomon::codec::ProtoMessage>::decode_message_into(buf.copy_to_bytes(len), dst)?;
                 Ok(())
             }
         }
@@ -174,24 +174,19 @@ fn parse_proto_attrs(field: &Field) -> Result<(u32, bool, bool)> {
     }
 }
 
-fn generate_decode(name: &Ident, fields: &[FieldInfo]) -> TokenStream2 {
-    // Generate field initializations
-    // - Repeated fields use Default + init_repeated
-    // - Other fields use Default
-    let field_inits = fields.iter().map(|f| {
-        let fname = f.name;
-        let fty = f.ty;
-        let tag = f.tag;
-
+fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
+    // Generate field initializations that work directly on dst
+    // Only repeated fields need init_repeated - other fields are already default
+    // (caller is responsible for providing a default-initialized dst)
+    let field_inits = fields.iter().filter_map(|f| {
         if f.repeated {
-            quote! {
-                let mut #fname: #fty = <#fty as Default>::default();
-                protomon::codec::ProtoRepeated::init_repeated(&mut #fname, buf.clone(), #tag);
-            }
+            let fname = f.name;
+            let tag = f.tag;
+            Some(quote! {
+                protomon::codec::ProtoRepeated::init_repeated(&mut dst.#fname, &buf, #tag);
+            })
         } else {
-            quote! {
-                let mut #fname: #fty = <#fty as Default>::default();
-            }
+            None
         }
     });
 
@@ -202,31 +197,31 @@ fn generate_decode(name: &Ident, fields: &[FieldInfo]) -> TokenStream2 {
         let tag = f.tag;
 
         quote! {
-            #tag => <#fty as protomon::codec::ProtoDecode>::decode_into(&mut slice, &mut #fname, value_offset)?,
+            #tag => <#fty as protomon::codec::ProtoDecode>::decode_into(&mut buf, &mut dst.#fname, value_offset)?,
         }
     });
 
-    let field_names = fields.iter().map(|f| f.name);
-
     quote! {
-        fn decode_message(buf: bytes::Bytes) -> Result<Self, protomon::error::DecodeErrorKind> {
+        #[inline(always)]
+        fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), protomon::error::DecodeErrorKind> {
             use bytes::Buf;
             use protomon::codec::ProtoDecode;
             use protomon::wire::{decode_key, skip_field};
 
-            let mut slice = &buf[..];
+            let original_len = buf.len();
+            let mut buf = buf;
             #(#field_inits)*
 
-            while slice.has_remaining() {
-                let (wire_type, tag) = decode_key(&mut slice)?;
-                let value_offset = buf.len() - slice.len();
+            while buf.has_remaining() {
+                let (wire_type, tag) = decode_key(&mut buf)?;
+                let value_offset = original_len - buf.remaining();
                 match tag {
                     #(#decode_arms)*
-                    _ => skip_field(wire_type, &mut slice)?,
+                    _ => skip_field(wire_type, &mut buf)?,
                 }
             }
 
-            Ok(#name { #(#field_names),* })
+            Ok(())
         }
     }
 }
@@ -253,7 +248,7 @@ fn generate_encode(fields: &[FieldInfo]) -> TokenStream2 {
         } else {
             // Regular fields only encode if not default (proto3 semantics)
             quote! {
-                if self.#fname != <#fty as Default>::default() {
+                if !<#fty as protomon::codec::IsProtoDefault>::is_proto_default(&self.#fname) {
                     protomon::wire::encode_key(<#fty as protomon::codec::ProtoType>::WIRE_TYPE, #tag, buf);
                     <#fty as protomon::codec::ProtoEncode>::encode(&self.#fname, buf);
                 }
@@ -289,7 +284,7 @@ fn generate_len(fields: &[FieldInfo]) -> TokenStream2 {
         } else {
             // Regular fields only count if not default (proto3 semantics)
             quote! {
-                if self.#fname != <#fty as Default>::default() {
+                if !<#fty as protomon::codec::IsProtoDefault>::is_proto_default(&self.#fname) {
                     len += protomon::wire::encoded_key_len(#tag) + <#fty as protomon::codec::ProtoEncode>::encoded_len(&self.#fname);
                 }
             }
