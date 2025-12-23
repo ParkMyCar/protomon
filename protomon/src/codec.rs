@@ -3,7 +3,7 @@
 mod default_check;
 mod delimited;
 mod message;
-mod optional;
+mod wrappers;
 #[cfg(feature = "alloc")]
 mod repeated;
 mod scalar;

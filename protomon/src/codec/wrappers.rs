@@ -1,4 +1,7 @@
-//! Optional field support for protobuf.
+//! Wrapper type support for protobuf (e.g. Option, Box).
+
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
 
 use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
@@ -39,8 +42,41 @@ impl<T: ProtoEncode> ProtoEncode for Option<T> {
     }
 }
 
+// Box<T> implementations - allows heap allocation for recursive or large types.
+
+#[cfg(feature = "alloc")]
+impl<T: ProtoType> ProtoType for Box<T> {
+    const WIRE_TYPE: WireType = T::WIRE_TYPE;
+}
+
+#[cfg(feature = "alloc")]
+impl<T: ProtoDecode> ProtoDecode for Box<T> {
+    #[inline]
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
+        T::decode_into(buf, dst.as_mut(), offset)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T: ProtoEncode> ProtoEncode for Box<T> {
+    #[inline]
+    fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+        self.as_ref().encode(buf);
+    }
+
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        self.as_ref().encoded_len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use alloc::boxed::Box;
     use alloc::vec;
     use alloc::vec::Vec;
 
@@ -90,5 +126,38 @@ mod tests {
         let mut opt: Option<ProtoString> = None;
         <Option<ProtoString> as ProtoDecode>::decode_into(&mut &buf[..], &mut opt, 0).unwrap();
         assert_eq!(opt.as_ref().map(|s| s.as_str()), Some("hello"));
+    }
+
+    #[test]
+    fn test_box_decode_into() {
+        // Encode a varint
+        let buf = [0x96, 0x01]; // 150 in varint
+        let mut boxed: Box<i32> = Box::new(0);
+        <Box<i32> as ProtoDecode>::decode_into(&mut &buf[..], &mut boxed, 0).unwrap();
+        assert_eq!(*boxed, 150);
+    }
+
+    #[test]
+    fn test_box_encode() {
+        let boxed: Box<i32> = Box::new(150);
+        let mut buf = Vec::new();
+        boxed.encode(&mut buf);
+        assert_eq!(buf, vec![0x96, 0x01]);
+        assert_eq!(boxed.encoded_len(), 2);
+    }
+
+    #[test]
+    fn test_box_string_roundtrip() {
+        let original: Box<ProtoString> = Box::new(ProtoString::from("hello"));
+
+        // Encode
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+        assert_eq!(original.encoded_len(), buf.len());
+
+        // Decode
+        let mut decoded: Box<ProtoString> = Box::default();
+        <Box<ProtoString> as ProtoDecode>::decode_into(&mut &buf[..], &mut decoded, 0).unwrap();
+        assert_eq!(decoded.as_str(), "hello");
     }
 }
