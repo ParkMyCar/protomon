@@ -366,8 +366,8 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
     const RESERVED_START: u32 = 19000;
     const RESERVED_END: u32 = 19999;
 
-    // Only validate non-oneof tags (oneof uses 0 as placeholder)
-    if !is_oneof {
+    // Only validate regular field tags (oneof and unknown use 0 as placeholder)
+    if !is_oneof && !unknown {
         if !(MIN_TAG..=MAX_TAG).contains(&tag) {
             return Err(syn::Error::new_spanned(
                 field,
@@ -576,30 +576,32 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
                         val.encode_leb128(&mut unknown_buf);
                     }
                     protomon::wire::WireType::I64 => {
-                        // Copy 8 bytes
+                        // Copy 8 bytes directly without intermediate Bytes allocation
                         if buf.remaining() < 8 {
                             return Err(protomon::error::DecodeErrorKind::UnexpectedEndOfBuffer);
                         }
-                        unknown_buf.extend_from_slice(&buf.copy_to_bytes(8));
+                        unknown_buf.extend_from_slice(&buf.chunk()[..8]);
+                        buf.advance(8);
                     }
                     protomon::wire::WireType::Len => {
                         // Read length and copy length + data
-                        let len_start = unknown_buf.len();
                         let len = protomon::wire::decode_len(&mut buf)?;
                         // Encode the length to unknown_buf
                         (len as u64).encode_leb128(&mut unknown_buf);
-                        // Copy the data
+                        // Copy the data directly without intermediate Bytes allocation
                         if buf.remaining() < len {
                             return Err(protomon::error::DecodeErrorKind::UnexpectedEndOfBuffer);
                         }
-                        unknown_buf.extend_from_slice(&buf.copy_to_bytes(len).as_ref());
+                        unknown_buf.extend_from_slice(&buf.chunk()[..len]);
+                        buf.advance(len);
                     }
                     protomon::wire::WireType::I32 => {
-                        // Copy 4 bytes
+                        // Copy 4 bytes directly without intermediate Bytes allocation
                         if buf.remaining() < 4 {
                             return Err(protomon::error::DecodeErrorKind::UnexpectedEndOfBuffer);
                         }
-                        unknown_buf.extend_from_slice(&buf.copy_to_bytes(4));
+                        unknown_buf.extend_from_slice(&buf.chunk()[..4]);
+                        buf.advance(4);
                     }
                     protomon::wire::WireType::SGroup | protomon::wire::WireType::EGroup => {
                         return Err(protomon::error::DecodeErrorKind::DeprecatedGroupEncoding);

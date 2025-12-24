@@ -138,7 +138,10 @@ impl IsProtoDefault for alloc::vec::Vec<u8> {
     }
 }
 
-// Fixed-size byte arrays - default is all zeros
+/// Fixed-size byte arrays - default is all zeros.
+///
+/// In proto3, bytes fields with default values (empty/all-zeros) are not encoded.
+/// This checks if all bytes in the array are zero.
 impl<const N: usize> IsProtoDefault for [u8; N] {
     #[inline(always)]
     fn is_proto_default(&self) -> bool {
