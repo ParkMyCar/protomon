@@ -59,7 +59,7 @@ pub use delimited::{ProtoBytes, ProtoString};
 
 // Re-export repeated field types
 #[cfg(feature = "alloc")]
-pub use repeated::{PackedIter, ProtoRepeated, Repeated, RepeatedDecodeIter, RepeatedIter};
+pub use repeated::{ProtoRepeated, Repeated, RepeatedDecodeIter, RepeatedIter};
 
 // Re-export message types and helpers
 pub use message::{
@@ -74,6 +74,6 @@ pub use oneof::{decode_oneof_field, encode_oneof_field, encoded_oneof_field_len,
 #[cfg(feature = "alloc")]
 pub use map::{ProtoMap, ProtoMapKey};
 
-// Re-export optimized packed decoding
+// Re-export packed field types
 #[cfg(feature = "alloc")]
-pub use packed::PackedDecode;
+pub use packed::{PackedDecode, ProtoPacked, ProtoPackedIter};

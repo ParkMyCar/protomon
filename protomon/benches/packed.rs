@@ -5,7 +5,7 @@
 
 use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use protomon::codec::{Fixed32, Fixed64, PackedDecode, PackedIter, ProtoEncode, Sfixed32, Sfixed64};
+use protomon::codec::{Fixed32, Fixed64, PackedDecode, ProtoEncode, ProtoPacked, Sfixed32, Sfixed64};
 
 /// Generate packed encoded data for a given type (raw, no length prefix).
 fn encode_packed<T: ProtoEncode + Clone>(values: &[T]) -> Vec<u8> {
@@ -38,12 +38,12 @@ fn bench_packed_fixed32(c: &mut Criterion) {
         group.throughput(Throughput::Elements(count as u64));
 
         group.bench_with_input(
-            BenchmarkId::new("PackedIter", count),
+            BenchmarkId::new("ProtoPackedIter", count),
             &encoded_bytes,
             |b, data| {
                 b.iter(|| {
-                    let iter: PackedIter<Fixed32> = PackedIter::new(data.clone());
-                    let collected: Vec<Fixed32> = iter.map(|r| r.unwrap()).collect();
+                    let packed = ProtoPacked::<Fixed32>::from_bytes(data.clone());
+                    let collected: Vec<Fixed32> = packed.iter().map(|r| r.unwrap()).collect();
                     std::hint::black_box(collected)
                 })
             },
@@ -117,12 +117,12 @@ fn bench_packed_fixed64(c: &mut Criterion) {
         group.throughput(Throughput::Elements(count as u64));
 
         group.bench_with_input(
-            BenchmarkId::new("PackedIter", count),
+            BenchmarkId::new("ProtoPackedIter", count),
             &encoded_bytes,
             |b, data| {
                 b.iter(|| {
-                    let iter: PackedIter<Fixed64> = PackedIter::new(data.clone());
-                    let collected: Vec<Fixed64> = iter.map(|r| r.unwrap()).collect();
+                    let packed = ProtoPacked::<Fixed64>::from_bytes(data.clone());
+                    let collected: Vec<Fixed64> = packed.iter().map(|r| r.unwrap()).collect();
                     std::hint::black_box(collected)
                 })
             },
@@ -199,12 +199,12 @@ fn bench_packed_f32(c: &mut Criterion) {
         group.throughput(Throughput::Elements(count as u64));
 
         group.bench_with_input(
-            BenchmarkId::new("PackedIter", count),
+            BenchmarkId::new("ProtoPackedIter", count),
             &encoded_bytes,
             |b, data| {
                 b.iter(|| {
-                    let iter: PackedIter<f32> = PackedIter::new(data.clone());
-                    let collected: Vec<f32> = iter.map(|r| r.unwrap()).collect();
+                    let packed = ProtoPacked::<f32>::from_bytes(data.clone());
+                    let collected: Vec<f32> = packed.iter().map(|r| r.unwrap()).collect();
                     std::hint::black_box(collected)
                 })
             },
@@ -259,12 +259,12 @@ fn bench_packed_f64(c: &mut Criterion) {
         group.throughput(Throughput::Elements(count as u64));
 
         group.bench_with_input(
-            BenchmarkId::new("PackedIter", count),
+            BenchmarkId::new("ProtoPackedIter", count),
             &encoded_bytes,
             |b, data| {
                 b.iter(|| {
-                    let iter: PackedIter<f64> = PackedIter::new(data.clone());
-                    let collected: Vec<f64> = iter.map(|r| r.unwrap()).collect();
+                    let packed = ProtoPacked::<f64>::from_bytes(data.clone());
+                    let collected: Vec<f64> = packed.iter().map(|r| r.unwrap()).collect();
                     std::hint::black_box(collected)
                 })
             },
@@ -320,12 +320,12 @@ fn bench_packed_u32(c: &mut Criterion) {
         group.throughput(Throughput::Elements(count as u64));
 
         group.bench_with_input(
-            BenchmarkId::new("small_PackedIter", count),
+            BenchmarkId::new("small_ProtoPackedIter", count),
             &small_bytes,
             |b, data| {
                 b.iter(|| {
-                    let iter: PackedIter<u32> = PackedIter::new(data.clone());
-                    let collected: Vec<u32> = iter.map(|r| r.unwrap()).collect();
+                    let packed = ProtoPacked::<u32>::from_bytes(data.clone());
+                    let collected: Vec<u32> = packed.iter().map(|r| r.unwrap()).collect();
                     std::hint::black_box(collected)
                 })
             },
@@ -370,12 +370,12 @@ fn bench_packed_u32(c: &mut Criterion) {
         let large_with_len = encode_packed_with_length(&large_values);
 
         group.bench_with_input(
-            BenchmarkId::new("large_PackedIter", count),
+            BenchmarkId::new("large_ProtoPackedIter", count),
             &large_bytes,
             |b, data| {
                 b.iter(|| {
-                    let iter: PackedIter<u32> = PackedIter::new(data.clone());
-                    let collected: Vec<u32> = iter.map(|r| r.unwrap()).collect();
+                    let packed = ProtoPacked::<u32>::from_bytes(data.clone());
+                    let collected: Vec<u32> = packed.iter().map(|r| r.unwrap()).collect();
                     std::hint::black_box(collected)
                 })
             },
@@ -432,12 +432,12 @@ fn bench_packed_u64(c: &mut Criterion) {
         group.throughput(Throughput::Elements(count as u64));
 
         group.bench_with_input(
-            BenchmarkId::new("small_PackedIter", count),
+            BenchmarkId::new("small_ProtoPackedIter", count),
             &small_bytes,
             |b, data| {
                 b.iter(|| {
-                    let iter: PackedIter<u64> = PackedIter::new(data.clone());
-                    let collected: Vec<u64> = iter.map(|r| r.unwrap()).collect();
+                    let packed = ProtoPacked::<u64>::from_bytes(data.clone());
+                    let collected: Vec<u64> = packed.iter().map(|r| r.unwrap()).collect();
                     std::hint::black_box(collected)
                 })
             },
@@ -482,12 +482,12 @@ fn bench_packed_u64(c: &mut Criterion) {
         let large_with_len = encode_packed_with_length(&large_values);
 
         group.bench_with_input(
-            BenchmarkId::new("large_PackedIter", count),
+            BenchmarkId::new("large_ProtoPackedIter", count),
             &large_bytes,
             |b, data| {
                 b.iter(|| {
-                    let iter: PackedIter<u64> = PackedIter::new(data.clone());
-                    let collected: Vec<u64> = iter.map(|r| r.unwrap()).collect();
+                    let packed = ProtoPacked::<u64>::from_bytes(data.clone());
+                    let collected: Vec<u64> = packed.iter().map(|r| r.unwrap()).collect();
                     std::hint::black_box(collected)
                 })
             },
@@ -544,12 +544,12 @@ fn bench_packed_sfixed32(c: &mut Criterion) {
         group.throughput(Throughput::Elements(count as u64));
 
         group.bench_with_input(
-            BenchmarkId::new("PackedIter", count),
+            BenchmarkId::new("ProtoPackedIter", count),
             &encoded_bytes,
             |b, data| {
                 b.iter(|| {
-                    let iter: PackedIter<Sfixed32> = PackedIter::new(data.clone());
-                    let collected: Vec<Sfixed32> = iter.map(|r| r.unwrap()).collect();
+                    let packed = ProtoPacked::<Sfixed32>::from_bytes(data.clone());
+                    let collected: Vec<Sfixed32> = packed.iter().map(|r| r.unwrap()).collect();
                     std::hint::black_box(collected)
                 })
             },
@@ -606,12 +606,12 @@ fn bench_packed_sfixed64(c: &mut Criterion) {
         group.throughput(Throughput::Elements(count as u64));
 
         group.bench_with_input(
-            BenchmarkId::new("PackedIter", count),
+            BenchmarkId::new("ProtoPackedIter", count),
             &encoded_bytes,
             |b, data| {
                 b.iter(|| {
-                    let iter: PackedIter<Sfixed64> = PackedIter::new(data.clone());
-                    let collected: Vec<Sfixed64> = iter.map(|r| r.unwrap()).collect();
+                    let packed = ProtoPacked::<Sfixed64>::from_bytes(data.clone());
+                    let collected: Vec<Sfixed64> = packed.iter().map(|r| r.unwrap()).collect();
                     std::hint::black_box(collected)
                 })
             },

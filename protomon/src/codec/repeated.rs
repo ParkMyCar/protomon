@@ -44,52 +44,6 @@ pub trait ProtoRepeated: Default {
     }
 }
 
-/// Iterator over packed repeated scalar fields.
-///
-/// Packed repeated fields encode all elements contiguously in a single
-/// length-delimited blob. This iterator decodes elements lazily.
-pub struct PackedIter<T> {
-    buf: bytes::Bytes,
-    offset: usize,
-    _marker: core::marker::PhantomData<T>,
-}
-
-impl<T> PackedIter<T> {
-    /// Create a new iterator over packed repeated elements.
-    pub fn new(buf: bytes::Bytes) -> Self {
-        Self {
-            buf,
-            offset: 0,
-            _marker: core::marker::PhantomData,
-        }
-    }
-
-    /// Returns the remaining bytes that haven't been iterated yet.
-    pub fn remaining_bytes(&self) -> &[u8] {
-        &self.buf[self.offset..]
-    }
-}
-
-impl<T: ProtoDecode + Default> Iterator for PackedIter<T> {
-    type Item = Result<T, DecodeErrorKind>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.offset >= self.buf.len() {
-            return None;
-        }
-        let mut slice = &self.buf[self.offset..];
-        let start_len = slice.len();
-        let mut value = T::default();
-        match T::decode_into(&mut slice, &mut value, self.offset) {
-            Ok(()) => {
-                self.offset += start_len - slice.len();
-                Some(Ok(value))
-            }
-            Err(e) => Some(Err(e)),
-        }
-    }
-}
-
 /// Repeated field that can be either lazily decoded or user-constructed.
 ///
 /// # Lazy Variant
@@ -542,42 +496,9 @@ mod tests {
     use alloc::string::{String, ToString};
     use alloc::vec;
 
-    use super::super::scalar::Fixed32;
     use super::super::{ProtoEncode, ProtoString};
     use super::*;
     use crate::wire::WireType;
-
-    #[test]
-    fn test_packed_iter_u32() {
-        let mut buf = Vec::new();
-        1u32.encode(&mut buf);
-        127u32.encode(&mut buf);
-        128u32.encode(&mut buf);
-        300u32.encode(&mut buf);
-
-        let iter: PackedIter<u32> = PackedIter::new(bytes::Bytes::from(buf));
-        let values: Vec<u32> = iter.map(|r| r.unwrap()).collect();
-        assert_eq!(values, vec![1, 127, 128, 300]);
-    }
-
-    #[test]
-    fn test_packed_iter_fixed32() {
-        let mut buf = Vec::new();
-        Fixed32(1).encode(&mut buf);
-        Fixed32(2).encode(&mut buf);
-        Fixed32(3).encode(&mut buf);
-
-        let iter: PackedIter<Fixed32> = PackedIter::new(bytes::Bytes::from(buf));
-        let values: Vec<Fixed32> = iter.map(|r| r.unwrap()).collect();
-        assert_eq!(values, vec![Fixed32(1), Fixed32(2), Fixed32(3)]);
-    }
-
-    #[test]
-    fn test_packed_iter_empty() {
-        let iter: PackedIter<u32> = PackedIter::new(bytes::Bytes::new());
-        let values: Vec<u32> = iter.map(|r| r.unwrap()).collect();
-        assert!(values.is_empty());
-    }
 
     fn build_test_message() -> Vec<u8> {
         use crate::wire::encode_key;
