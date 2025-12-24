@@ -137,3 +137,11 @@ impl IsProtoDefault for alloc::vec::Vec<u8> {
         self.is_empty()
     }
 }
+
+// Fixed-size byte arrays - default is all zeros
+impl<const N: usize> IsProtoDefault for [u8; N] {
+    #[inline(always)]
+    fn is_proto_default(&self) -> bool {
+        self.iter().all(|&b| b == 0)
+    }
+}
