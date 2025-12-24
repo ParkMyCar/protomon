@@ -223,6 +223,21 @@ pub struct MessageOptions {
     /// Set true if this message is a map entry type.
     #[proto(tag = 7, optional)]
     pub map_entry: Option<bool>,
+
+    // Protomon extensions (field numbers 50010-50019 reserved for message options)
+
+    /// Whether to preserve unknown fields for round-trip compatibility.
+    /// Extension field 50010.
+    #[proto(tag = 50010, optional)]
+    pub preserve_unknown: Option<bool>,
+}
+
+impl MessageOptions {
+    /// Returns whether this message should preserve unknown fields.
+    /// Defaults to false if not explicitly set.
+    pub fn should_preserve_unknown(&self) -> bool {
+        self.preserve_unknown.unwrap_or(false)
+    }
 }
 
 /// Options for a field.
