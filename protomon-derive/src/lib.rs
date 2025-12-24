@@ -6,6 +6,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
+use syn::spanned::Spanned;
 use syn::{DeriveInput, Field, Fields, Ident, Result, Type, Variant};
 
 /// Derive macro for implementing `ProtoMessage` trait.
@@ -52,6 +53,8 @@ struct FieldInfo<'a> {
     oneof_tags: Option<Vec<u32>>,
     /// If this is a required (non-nullable) oneof field.
     oneof_required: bool,
+    /// If this is the unknown fields buffer (for preserving unknown fields).
+    unknown: bool,
 }
 
 fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
@@ -83,6 +86,7 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
                 map: attrs.map,
                 oneof_tags: attrs.oneof_tags,
                 oneof_required: attrs.oneof_required,
+                unknown: attrs.unknown,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -175,9 +179,48 @@ struct ProtoFieldAttrs {
     map: bool,
     oneof_tags: Option<Vec<u32>>,
     oneof_required: bool,
+    unknown: bool,
 }
 
-/// Parse #[proto(tag = N, repeated, optional, map, oneof, tags = "1, 2, 3", required)] attributes.
+/// Validates that a tag number is within the valid Protocol Buffers range.
+///
+/// Valid tags are 1 to 536870911 (2^29-1), excluding the reserved range 19000-19999.
+fn validate_tag(tag: u32, span: proc_macro2::Span) -> Result<()> {
+    const MAX_TAG: u32 = 536_870_911; // 2^29 - 1
+    const RESERVED_START: u32 = 19000;
+    const RESERVED_END: u32 = 19999;
+
+    if tag == 0 {
+        return Err(syn::Error::new(
+            span,
+            "Tag number 0 is invalid. Valid tag numbers are 1 to 536870911, excluding 19000-19999",
+        ));
+    }
+
+    if tag > MAX_TAG {
+        return Err(syn::Error::new(
+            span,
+            format!(
+                "Tag number {} exceeds the maximum allowed value of {} (2^29-1)",
+                tag, MAX_TAG
+            ),
+        ));
+    }
+
+    if tag >= RESERVED_START && tag <= RESERVED_END {
+        return Err(syn::Error::new(
+            span,
+            format!(
+                "Tag number {} is in the reserved range {}-{}",
+                tag, RESERVED_START, RESERVED_END
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Parse #[proto(tag = N, repeated, optional, map, oneof, tags = "1, 2, 3", required, unknown)] attributes.
 fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
     let mut tag = None;
     let mut repeated = false;
@@ -186,13 +229,16 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
     let mut is_oneof = false;
     let mut oneof_tags_str: Option<String> = None;
     let mut required = false;
+    let mut unknown = false;
 
     for attr in &field.attrs {
         if attr.path().is_ident("proto") {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("tag") {
                     let value: syn::LitInt = meta.value()?.parse()?;
-                    tag = Some(value.base10_parse::<u32>()?);
+                    let parsed_tag = value.base10_parse::<u32>()?;
+                    validate_tag(parsed_tag, value.span())?;
+                    tag = Some(parsed_tag);
                 } else if meta.path.is_ident("repeated") {
                     repeated = true;
                 } else if meta.path.is_ident("optional") {
@@ -206,6 +252,8 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
                     oneof_tags_str = Some(value.value());
                 } else if meta.path.is_ident("required") {
                     required = true;
+                } else if meta.path.is_ident("unknown") {
+                    unknown = true;
                 }
                 Ok(())
             })?;
@@ -219,9 +267,11 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
                 let tags: Result<Vec<u32>> = tags_str
                     .split(',')
                     .map(|s| {
-                        s.trim()
+                        let parsed_tag = s.trim()
                             .parse::<u32>()
-                            .map_err(|_| syn::Error::new_spanned(field, "invalid tag in tags list"))
+                            .map_err(|_| syn::Error::new_spanned(field, "invalid tag in tags list"))?;
+                        validate_tag(parsed_tag, field.span())?;
+                        Ok(parsed_tag)
                     })
                     .collect();
                 Some(tags?)
@@ -752,7 +802,9 @@ fn parse_oneof_variant(variant: &Variant) -> Result<OneofVariantInfo<'_>> {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("tag") {
                     let value: syn::LitInt = meta.value()?.parse()?;
-                    tag = Some(value.base10_parse::<u32>()?);
+                    let parsed_tag = value.base10_parse::<u32>()?;
+                    validate_tag(parsed_tag, value.span())?;
+                    tag = Some(parsed_tag);
                 }
                 Ok(())
             })?;
