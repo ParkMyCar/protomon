@@ -87,3 +87,20 @@ extend google.protobuf.OneofOptions {
   //   }
   bool nullable = 50000;
 }
+
+// Message-level options for customizing generated Rust code.
+extend google.protobuf.MessageOptions {
+  // Preserve unknown fields for round-trip compatibility.
+  // When set to true, adds a `_unknown: bytes::Bytes` field to the message
+  // that stores any unrecognized fields encountered during decoding.
+  // These fields are re-serialized during encoding.
+  // Useful for proxy scenarios where messages are forwarded without
+  // understanding all fields.
+  //
+  // Example:
+  //   message MyMessage {
+  //     option (protomon.preserve_unknown) = true;
+  //     string name = 1;
+  //   }
+  bool preserve_unknown = 50010;
+}

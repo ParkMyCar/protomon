@@ -60,6 +60,24 @@ pub fn generate_message(
         .map(|o| generate_oneof_field(name, o))
         .collect::<Result<Vec<_>, _>>()?;
 
+    // Check if we should add an _unknown field for preserving unknown fields
+    let unknown_field = if message
+        .options
+        .as_ref()
+        .map(|o| o.should_preserve_unknown())
+        .unwrap_or(false)
+    {
+        quote! {
+            /// Unknown fields for round-trip compatibility.
+            /// This field stores any unrecognized protobuf fields encountered during decoding
+            /// and re-serializes them during encoding.
+            #[proto(unknown)]
+            pub _unknown: bytes::Bytes,
+        }
+    } else {
+        quote!()
+    };
+
     // Generate nested types
     let mut nested = TokenStream::new();
 
@@ -107,6 +125,7 @@ pub fn generate_message(
         pub struct #struct_name {
             #(#fields)*
             #(#oneof_fields)*
+            #unknown_field
         }
 
         #nested_mod
