@@ -90,7 +90,8 @@ fn main() {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos() as u64 + iter as u64
+                .as_nanos() as u64
+                + iter as u64
         });
 
         // Use a simple PRNG to generate test data
@@ -110,7 +111,10 @@ fn main() {
         let test_case = match TestCase::arbitrary(&mut u) {
             Ok(tc) => tc,
             Err(_) => {
-                eprintln!("Iteration {}: Failed to generate test case (not enough entropy), skipping", iter);
+                eprintln!(
+                    "Iteration {}: Failed to generate test case (not enough entropy), skipping",
+                    iter
+                );
                 continue;
             }
         };
@@ -120,7 +124,12 @@ fn main() {
         fs::write(&proto_path, test_case.to_proto()).expect("Failed to write proto file");
 
         // Get the message names from the schema
-        let messages: Vec<_> = test_case.schema.messages.iter().map(|m| m.name.clone()).collect();
+        let messages: Vec<_> = test_case
+            .schema
+            .messages
+            .iter()
+            .map(|m| m.name.clone())
+            .collect();
 
         if messages.is_empty() {
             eprintln!("Iteration {}: No messages in schema, skipping", iter);
@@ -132,8 +141,12 @@ fn main() {
             let full_name = format!("{}.{}", test_case.schema.package, msg_name);
             let text_format = msg_value.to_text_format();
 
-            eprintln!("Iteration {}: Testing message {} ({} bytes text)",
-                     iter, full_name, text_format.len());
+            eprintln!(
+                "Iteration {}: Testing message {} ({} bytes text)",
+                iter,
+                full_name,
+                text_format.len()
+            );
 
             // Run C++ harness
             let cpp_result = run_harness(
@@ -145,26 +158,27 @@ fn main() {
             );
 
             // Run Go harness
-            let go_result = run_harness(
-                &go_harness,
-                &proto_path,
-                &full_name,
-                &text_format,
-                "encode",
-            );
+            let go_result =
+                run_harness(&go_harness, &proto_path, &full_name, &text_format, "encode");
 
             match (&cpp_result, &go_result) {
                 (Ok(cpp_bytes), Ok(go_bytes)) => {
                     // Both succeeded - compare outputs
                     // Note: Field ordering may differ, so we decode and re-compare
                     if cpp_bytes != go_bytes {
-                        eprintln!("  Binary outputs differ ({} vs {} bytes)", cpp_bytes.len(), go_bytes.len());
+                        eprintln!(
+                            "  Binary outputs differ ({} vs {} bytes)",
+                            cpp_bytes.len(),
+                            go_bytes.len()
+                        );
                         eprintln!("  C++: {:?}", cpp_bytes);
                         eprintln!("  Go:  {:?}", go_bytes);
 
                         // Try decoding each with the other harness to verify semantic equivalence
-                        let cpp_decoded = run_harness_decode(&go_harness, &proto_path, &full_name, cpp_bytes);
-                        let go_decoded = run_harness_decode(&cpp_harness, &proto_path, &full_name, go_bytes);
+                        let cpp_decoded =
+                            run_harness_decode(&go_harness, &proto_path, &full_name, cpp_bytes);
+                        let go_decoded =
+                            run_harness_decode(&cpp_harness, &proto_path, &full_name, go_bytes);
 
                         match (cpp_decoded, go_decoded) {
                             (Ok(_), Ok(_)) => {
@@ -180,7 +194,10 @@ fn main() {
                             }
                         }
                     } else {
-                        eprintln!("  OK: Both harnesses produced identical output ({} bytes)", cpp_bytes.len());
+                        eprintln!(
+                            "  OK: Both harnesses produced identical output ({} bytes)",
+                            cpp_bytes.len()
+                        );
                     }
                 }
                 (Err(e), Ok(_)) => {
@@ -223,22 +240,26 @@ fn run_harness(
 
     let mut cmd = Command::new(harness_path);
     cmd.arg(format!("--mode={}", mode))
-       .arg(format!("--proto={}", proto_file))
-       .arg(format!("--proto_path={}", proto_dir.display()))
-       .arg(format!("--message={}", message_name))
-       .stdin(Stdio::piped())
-       .stdout(Stdio::piped())
-       .stderr(Stdio::piped());
+        .arg(format!("--proto={}", proto_file))
+        .arg(format!("--proto_path={}", proto_dir.display()))
+        .arg(format!("--message={}", message_name))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn: {}", e))?;
 
     // Write input
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(text_input.as_bytes()).map_err(|e| format!("Failed to write: {}", e))?;
+        stdin
+            .write_all(text_input.as_bytes())
+            .map_err(|e| format!("Failed to write: {}", e))?;
     }
 
-    let output = child.wait_with_output().map_err(|e| format!("Failed to wait: {}", e))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed to wait: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -260,21 +281,25 @@ fn run_harness_decode(
 
     let mut cmd = Command::new(harness_path);
     cmd.arg("--mode=decode")
-       .arg(format!("--proto={}", proto_file))
-       .arg(format!("--proto_path={}", proto_dir.display()))
-       .arg(format!("--message={}", message_name))
-       .stdin(Stdio::piped())
-       .stdout(Stdio::piped())
-       .stderr(Stdio::piped());
+        .arg(format!("--proto={}", proto_file))
+        .arg(format!("--proto_path={}", proto_dir.display()))
+        .arg(format!("--message={}", message_name))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn: {}", e))?;
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to get stdin");
-        stdin.write_all(binary_input).map_err(|e| format!("Failed to write: {}", e))?;
+        stdin
+            .write_all(binary_input)
+            .map_err(|e| format!("Failed to write: {}", e))?;
     }
 
-    let output = child.wait_with_output().map_err(|e| format!("Failed to wait: {}", e))?;
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed to wait: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

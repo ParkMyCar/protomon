@@ -307,8 +307,8 @@ where
         let len = crate::wire::decode_len(buf)?;
         if len != N {
             return Err(DecodeErrorKind::LengthMismatch {
-                expected: N as u16,
-                actual: len as u16,
+                expected: N,
+                actual: len,
             });
         }
         if buf.remaining() < N {

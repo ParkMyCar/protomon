@@ -181,9 +181,7 @@ impl FieldDescriptor {
     fn generate_field_number(seed: u32, used_numbers: &HashSet<u32>) -> u32 {
         // Start from seed and find the next available number
         let mut candidate = (seed % 1000) + 1; // Keep numbers small for readability
-        while used_numbers.contains(&candidate)
-            || (19000..=19999).contains(&candidate)
-        {
+        while used_numbers.contains(&candidate) || (19000..=19999).contains(&candidate) {
             candidate += 1;
             if candidate > 20000 {
                 candidate = 1;
@@ -314,7 +312,11 @@ impl Schema {
     /// Returns the total number of message types (including nested).
     pub fn total_message_count(&self) -> usize {
         fn count_messages(msg: &MessageDescriptor) -> usize {
-            1 + msg.nested_messages.iter().map(count_messages).sum::<usize>()
+            1 + msg
+                .nested_messages
+                .iter()
+                .map(count_messages)
+                .sum::<usize>()
         }
         self.messages.iter().map(count_messages).sum()
     }
@@ -374,7 +376,13 @@ fn generate_message(
     let mut used_names = HashSet::new();
 
     for i in 0..num_fields {
-        let field = generate_field(u, i as u8, &nested_messages, &mut used_numbers, &mut used_names)?;
+        let field = generate_field(
+            u,
+            i as u8,
+            &nested_messages,
+            &mut used_numbers,
+            &mut used_names,
+        )?;
         fields.push(field);
     }
 
@@ -535,24 +543,17 @@ mod tests {
 
     #[test]
     fn test_message_name_generation() {
-        let names: Vec<_> = [
-            (0u8, 0usize),
-            (1, 0),
-            (0, 1),
-            (1, 1),
-            (0, 2),
-            (0, 3),
-        ]
-        .iter()
-        .map(|&(seed, depth)| {
-            format!(
-                "seed={}, depth={} -> {}",
-                seed,
-                depth,
-                MessageDescriptor::generate_name(seed, depth)
-            )
-        })
-        .collect();
+        let names: Vec<_> = [(0u8, 0usize), (1, 0), (0, 1), (1, 1), (0, 2), (0, 3)]
+            .iter()
+            .map(|&(seed, depth)| {
+                format!(
+                    "seed={}, depth={} -> {}",
+                    seed,
+                    depth,
+                    MessageDescriptor::generate_name(seed, depth)
+                )
+            })
+            .collect();
 
         assert_snapshot!(names.join("\n"), @r#"
         seed=0, depth=0 -> RootMessageA
@@ -724,10 +725,9 @@ mod tests {
     fn test_arbitrary_schema_generation() {
         // Use a fixed seed for deterministic output
         let data: &[u8] = &[
-            0x42, 0x13, 0x37, 0xDE, 0xAD, 0xBE, 0xEF, 0x00,
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-            0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x01,
-            0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+            0x42, 0x13, 0x37, 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+            0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x01, 0x02, 0x03, 0x04, 0x05,
+            0x06, 0x07, 0x08, 0x09,
         ];
         let mut u = Unstructured::new(data);
 

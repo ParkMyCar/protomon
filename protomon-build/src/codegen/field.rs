@@ -7,7 +7,9 @@ use crate::context::{to_rust_field_name, GenerationContext};
 use crate::descriptor::{FieldDescriptorProto, Label, Type};
 use crate::Error;
 
-use super::types::{build_full_type, proto_type_to_rust, map_key_type_to_rust, scalar_type_to_rust};
+use super::types::{
+    build_full_type, map_key_type_to_rust, proto_type_to_rust, scalar_type_to_rust,
+};
 
 /// Generate a struct field with #[proto(...)] attribute.
 pub fn generate_field(
@@ -20,9 +22,9 @@ pub fn generate_field(
     let tag = field.number.ok_or(Error::MissingFieldNumber)?;
     let field_name = format_ident!("{}", to_rust_field_name(name));
 
-    let proto_type = field.field_type().ok_or(Error::InvalidFieldType(
-        field.r#type.unwrap_or(-1),
-    ))?;
+    let proto_type = field
+        .field_type()
+        .ok_or(Error::InvalidFieldType(field.r#type.unwrap_or(-1)))?;
     let label = field.label();
     let proto3_optional = field.proto3_optional.unwrap_or(false);
 
@@ -72,20 +74,23 @@ fn generate_map_field(
     let tag_lit = proc_macro2::Literal::i32_unsuffixed(tag);
 
     // Get key type
-    let key_type = map_entry.key_field.field_type().ok_or(Error::InvalidFieldType(
-        map_entry.key_field.r#type.unwrap_or(-1),
-    ))?;
+    let key_type = map_entry
+        .key_field
+        .field_type()
+        .ok_or(Error::InvalidFieldType(
+            map_entry.key_field.r#type.unwrap_or(-1),
+        ))?;
     let key_rust_type = map_key_type_to_rust(key_type)?;
 
     // Get value type
-    let value_type = map_entry.value_field.field_type().ok_or(Error::InvalidFieldType(
-        map_entry.value_field.r#type.unwrap_or(-1),
-    ))?;
-    let value_rust_type = scalar_type_to_rust(
-        ctx,
-        value_type,
-        map_entry.value_field.type_name.as_deref(),
-    )?;
+    let value_type = map_entry
+        .value_field
+        .field_type()
+        .ok_or(Error::InvalidFieldType(
+            map_entry.value_field.r#type.unwrap_or(-1),
+        ))?;
+    let value_rust_type =
+        scalar_type_to_rust(ctx, value_type, map_entry.value_field.type_name.as_deref())?;
 
     // Check map_type extension to determine BTreeMap vs HashMap
     let use_hash_map = field

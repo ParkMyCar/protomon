@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 ///
 /// Type customization (like using Vec vs Repeated) is done via protobuf extensions
 /// in your .proto files. See `proto/protomon/extensions.proto` for available options.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Config {
     /// Output directory for generated files.
     pub(crate) out_dir: Option<PathBuf>,
@@ -30,20 +30,6 @@ pub struct Config {
 
     /// Disable formatting with prettyplease.
     pub(crate) skip_format: bool,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            out_dir: None,
-            protoc_path: None,
-            protoc_args: Vec::new(),
-            skip_protoc: false,
-            file_descriptor_set_path: None,
-            extern_paths: HashMap::new(),
-            skip_format: false,
-        }
-    }
 }
 
 impl Config {
@@ -96,7 +82,8 @@ impl Config {
         proto_path: impl Into<String>,
         rust_path: impl Into<String>,
     ) -> &mut Self {
-        self.extern_paths.insert(proto_path.into(), rust_path.into());
+        self.extern_paths
+            .insert(proto_path.into(), rust_path.into());
         self
     }
 

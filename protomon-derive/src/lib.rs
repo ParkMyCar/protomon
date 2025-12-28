@@ -87,6 +87,36 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
         })
         .collect::<Result<Vec<_>>>()?;
 
+    // Check for duplicate tags
+    let mut seen_tags = std::collections::HashSet::new();
+    for f in &field_info {
+        if let Some(ref tags) = f.oneof_tags {
+            // Oneof fields use their tags list
+            for &tag in tags {
+                if !seen_tags.insert(tag) {
+                    return Err(syn::Error::new_spanned(
+                        f.name,
+                        format!(
+                            "duplicate tag {} (tags must be unique across all fields)",
+                            tag
+                        ),
+                    ));
+                }
+            }
+        } else {
+            // Regular fields use their single tag
+            if !seen_tags.insert(f.tag) {
+                return Err(syn::Error::new_spanned(
+                    f.name,
+                    format!(
+                        "duplicate tag {} (tags must be unique across all fields)",
+                        f.tag
+                    ),
+                ));
+            }
+        }
+    }
+
     let decode_into_impl = generate_decode_into(&field_info);
     let encode_impl = generate_encode(&field_info);
     let len_impl = generate_len(&field_info);
@@ -207,6 +237,62 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
         None
     };
 
+    // =========================================================================
+    // Validate conflicting attribute combinations
+    // =========================================================================
+
+    // repeated + optional is invalid in protobuf
+    if repeated && optional {
+        return Err(syn::Error::new_spanned(
+            field,
+            "field cannot be both 'repeated' and 'optional'",
+        ));
+    }
+
+    // map + repeated is redundant (maps are implicitly repeated)
+    if map && repeated {
+        return Err(syn::Error::new_spanned(
+            field,
+            "map fields cannot also be 'repeated' (maps are implicitly repeated)",
+        ));
+    }
+
+    // map + optional is invalid (maps can't be optional in protobuf)
+    if map && optional {
+        return Err(syn::Error::new_spanned(
+            field,
+            "map fields cannot be 'optional'",
+        ));
+    }
+
+    // map + oneof is invalid
+    if map && is_oneof {
+        return Err(syn::Error::new_spanned(
+            field,
+            "map fields cannot be part of a oneof",
+        ));
+    }
+
+    // oneof + repeated is invalid
+    if is_oneof && repeated {
+        return Err(syn::Error::new_spanned(
+            field,
+            "oneof fields cannot be 'repeated'",
+        ));
+    }
+
+    // required without oneof is meaningless
+    if required && !is_oneof {
+        return Err(syn::Error::new_spanned(
+            field,
+            "'required' attribute is only valid for oneof fields",
+        ));
+    }
+
+    // =========================================================================
+    // Validate and extract tag
+    // =========================================================================
+
     // For oneof fields, tag is not required (we use the tags list instead)
     // Use 0 as placeholder since it's not used for oneof fields
     let tag = if is_oneof {
@@ -222,6 +308,55 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
             }
         }
     };
+
+    // Validate tag range (protobuf spec: 1 to 2^29-1, excluding 19000-19999)
+    const MIN_TAG: u32 = 1;
+    const MAX_TAG: u32 = (1 << 29) - 1;
+    const RESERVED_START: u32 = 19000;
+    const RESERVED_END: u32 = 19999;
+
+    // Only validate non-oneof tags (oneof uses 0 as placeholder)
+    if !is_oneof {
+        if !(MIN_TAG..=MAX_TAG).contains(&tag) {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!("tag must be between {} and {}", MIN_TAG, MAX_TAG),
+            ));
+        }
+        if (RESERVED_START..=RESERVED_END).contains(&tag) {
+            return Err(syn::Error::new_spanned(
+                field,
+                format!(
+                    "tags {}-{} are reserved for protobuf implementation",
+                    RESERVED_START, RESERVED_END
+                ),
+            ));
+        }
+    }
+
+    // Also validate oneof tags
+    if let Some(ref tags) = oneof_tags {
+        for &t in tags {
+            if !(MIN_TAG..=MAX_TAG).contains(&t) {
+                return Err(syn::Error::new_spanned(
+                    field,
+                    format!(
+                        "oneof tag {} must be between {} and {}",
+                        t, MIN_TAG, MAX_TAG
+                    ),
+                ));
+            }
+            if (RESERVED_START..=RESERVED_END).contains(&t) {
+                return Err(syn::Error::new_spanned(
+                    field,
+                    format!(
+                        "oneof tag {} is in reserved range {}-{}",
+                        t, RESERVED_START, RESERVED_END
+                    ),
+                ));
+            }
+        }
+    }
 
     Ok(ProtoFieldAttrs {
         tag,

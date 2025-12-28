@@ -43,10 +43,9 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Io(e) => write!(f, "IO error: {}", e),
-            Self::ProtocNotFound => write!(
-                f,
-                "protoc not found. Set PROTOC env var or install protoc."
-            ),
+            Self::ProtocNotFound => {
+                write!(f, "protoc not found. Set PROTOC env var or install protoc.")
+            }
             Self::ProtocFailed(msg) => {
                 // Truncate very long error messages to keep output readable
                 const MAX_LEN: usize = 1000;

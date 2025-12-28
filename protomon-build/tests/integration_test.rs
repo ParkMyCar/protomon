@@ -84,10 +84,7 @@ fn test_compile_with_extensions() {
 
     Config::new()
         .out_dir(out_dir.path())
-        .compile_protos(
-            &["tests/proto/test_extensions.proto"],
-            &["tests/proto/"],
-        )
+        .compile_protos(&["tests/proto/test_extensions.proto"], &["tests/proto/"])
         .expect("Failed to compile protos");
 
     let test_rs = out_dir.path().join("test_extensions.rs");
@@ -136,10 +133,7 @@ fn test_recursive_type_detection() {
 
     Config::new()
         .out_dir(out_dir.path())
-        .compile_protos(
-            &["tests/proto/test_recursive.proto"],
-            &["tests/proto/"],
-        )
+        .compile_protos(&["tests/proto/test_recursive.proto"], &["tests/proto/"])
         .expect("Failed to compile protos");
 
     let test_rs = out_dir.path().join("test_recursive.rs");
@@ -197,10 +191,7 @@ fn test_oneof_generation() {
 
     Config::new()
         .out_dir(out_dir.path())
-        .compile_protos(
-            &["tests/proto/test_oneof.proto"],
-            &["tests/proto/"],
-        )
+        .compile_protos(&["tests/proto/test_oneof.proto"], &["tests/proto/"])
         .expect("Failed to compile protos");
 
     let test_rs = out_dir.path().join("test_oneof.rs");
@@ -293,11 +284,8 @@ fn test_map_generation() {
 
     Config::new()
         .out_dir(out_dir.path())
-        .protoc_arg("-I../../proto")  // Include protomon extensions
-        .compile_protos(
-            &["tests/proto/test_map.proto"],
-            &["tests/proto/"],
-        )
+        .protoc_arg("-I../../proto") // Include protomon extensions
+        .compile_protos(&["tests/proto/test_map.proto"], &["tests/proto/"])
         .expect("Failed to compile protos");
 
     let test_rs = out_dir.path().join("test_map.rs");

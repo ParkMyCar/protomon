@@ -85,8 +85,10 @@ fn test_empty_map() {
 
 #[test]
 fn test_multiple_map_fields() {
-    let mut msg = MultipleMapFields::default();
-    msg.name = ProtoString::from("config");
+    let mut msg = MultipleMapFields {
+        name: ProtoString::from("config"),
+        ..Default::default()
+    };
     msg.settings.insert("key1".into(), "value1".into());
     msg.settings.insert("key2".into(), "value2".into());
     msg.counts.insert(1, 100);

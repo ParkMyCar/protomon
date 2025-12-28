@@ -66,10 +66,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create test values
     let mut msg = MessageValue::new();
-    msg.fields.insert("id".to_string(), FieldValue::Scalar(ScalarValue::Int32(42)));
-    msg.fields.insert("name".to_string(), FieldValue::Scalar(ScalarValue::String("Hello, Protobuf!".to_string())));
-    msg.fields.insert("score".to_string(), FieldValue::Scalar(ScalarValue::Double(3.14159)));
-    msg.fields.insert("active".to_string(), FieldValue::Scalar(ScalarValue::Bool(true)));
+    msg.fields
+        .insert("id".to_string(), FieldValue::Scalar(ScalarValue::Int32(42)));
+    msg.fields.insert(
+        "name".to_string(),
+        FieldValue::Scalar(ScalarValue::String("Hello, Protobuf!".to_string())),
+    );
+    msg.fields.insert(
+        "score".to_string(),
+        FieldValue::Scalar(ScalarValue::Double(3.14159)),
+    );
+    msg.fields.insert(
+        "active".to_string(),
+        FieldValue::Scalar(ScalarValue::Bool(true)),
+    );
     msg.fields.insert(
         "tags".to_string(),
         FieldValue::Repeated(vec![
@@ -78,7 +88,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             FieldValue::Scalar(ScalarValue::String("fuzzing".to_string())),
         ]),
     );
-    msg.fields.insert("data".to_string(), FieldValue::Scalar(ScalarValue::Bytes(vec![0xDE, 0xAD, 0xBE, 0xEF])));
+    msg.fields.insert(
+        "data".to_string(),
+        FieldValue::Scalar(ScalarValue::Bytes(vec![0xDE, 0xAD, 0xBE, 0xEF])),
+    );
 
     // Write .proto file
     let proto_path = test_dir.join("test.proto");
@@ -161,5 +174,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn hex_dump(data: &[u8]) -> String {
-    data.iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" ")
+    data.iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<Vec<_>>()
+        .join(" ")
 }

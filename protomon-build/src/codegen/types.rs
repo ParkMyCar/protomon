@@ -25,6 +25,7 @@ pub struct RustType {
 ///
 /// The `auto_box` parameter indicates this field was detected as part of a
 /// recursive type cycle and should be automatically boxed.
+#[allow(clippy::too_many_arguments)]
 pub fn proto_type_to_rust(
     ctx: &GenerationContext,
     proto_type: Type,
@@ -87,16 +88,15 @@ pub fn proto_type_to_rust(
 
     // Validate that fixed_array size is at most 32 (Rust's Default trait limit)
     if fixed_array > 32 {
-        return Err(Error::InvalidOption(
-            format!(
-                "[(protomon.fixed_array) = {}] exceeds maximum size of 32. \
+        return Err(Error::InvalidOption(format!(
+            "[(protomon.fixed_array) = {}] exceeds maximum size of 32. \
                  Rust's Default trait is only implemented for arrays up to [T; 32].",
-                fixed_array
-            ),
-        ));
+            fixed_array
+        )));
     }
 
-    let base_type = scalar_type_to_rust_inner(ctx, proto_type, type_name, is_lazy, fixed_array, use_vec)?;
+    let base_type =
+        scalar_type_to_rust_inner(ctx, proto_type, type_name, is_lazy, fixed_array, use_vec)?;
 
     Ok(RustType {
         base_type,
@@ -195,10 +195,10 @@ fn scalar_type_to_rust_inner(
 
         // Message type
         Type::Message => {
-            let type_name = type_name.ok_or_else(|| {
-                Error::DecodeError("Message type must have type_name".into())
-            })?;
-            let path: syn::Path = if let Some(extern_path) = ctx.config.extern_paths.get(type_name) {
+            let type_name = type_name
+                .ok_or_else(|| Error::DecodeError("Message type must have type_name".into()))?;
+            let path: syn::Path = if let Some(extern_path) = ctx.config.extern_paths.get(type_name)
+            {
                 syn::parse_str(extern_path).map_err(|e| {
                     Error::SynParse(format!("Invalid extern_path '{}': {}", extern_path, e))
                 })?

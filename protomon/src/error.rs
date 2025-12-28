@@ -8,10 +8,12 @@ pub enum DecodeErrorKind {
     UnexpectedEndOfBuffer,
     DeprecatedGroupEncoding,
     InvalidUtf8,
-    LengthMismatch { expected: u16, actual: u16 },
+    LengthOverflow { value: u64 },
+    LengthMismatch { expected: usize, actual: usize },
     ProgrammingError { reason: &'static str },
     MissingRequiredOneof { field: &'static str },
     InvalidPackedLength { expected_multiple: u8, actual: u32 },
+    IntegerOverflow { target_type: &'static str },
 }
 
 impl fmt::Display for DecodeErrorKind {
@@ -35,6 +37,12 @@ impl fmt::Display for DecodeErrorKind {
             DecodeErrorKind::InvalidUtf8 => {
                 write!(f, "invalid UTF-8 in string field")
             }
+            DecodeErrorKind::LengthOverflow { value } => {
+                write!(
+                    f,
+                    "length prefix {value} exceeds platform addressable memory"
+                )
+            }
             DecodeErrorKind::LengthMismatch { expected, actual } => {
                 write!(f, "length mismatch: expected {expected}, got {actual}")
             }
@@ -52,6 +60,9 @@ impl fmt::Display for DecodeErrorKind {
                     f,
                     "invalid packed field length: {actual} is not a multiple of {expected_multiple}"
                 )
+            }
+            DecodeErrorKind::IntegerOverflow { target_type } => {
+                write!(f, "integer overflow: value does not fit in {target_type}")
             }
         }
     }

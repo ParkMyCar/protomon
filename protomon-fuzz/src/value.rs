@@ -112,7 +112,7 @@ impl ScalarValue {
             ScalarValue::String(v) => format!("\"{}\"", escape_json_string(v)),
             ScalarValue::Bytes(v) => {
                 // Protobuf JSON uses base64 for bytes
-                use base64::{Engine, engine::general_purpose::STANDARD};
+                use base64::{engine::general_purpose::STANDARD, Engine};
                 format!("\"{}\"", STANDARD.encode(v))
             }
         }
@@ -365,7 +365,12 @@ fn to_text_format_inner(msg: &MessageValue, indent: usize) -> String {
     for (name, value) in &msg.fields {
         match value {
             FieldValue::Scalar(scalar) => {
-                lines.push(format!("{}{}: {}", indent_str, name, scalar_to_text(scalar)));
+                lines.push(format!(
+                    "{}{}: {}",
+                    indent_str,
+                    name,
+                    scalar_to_text(scalar)
+                ));
             }
             FieldValue::Message(nested) => {
                 lines.push(format!("{}{} {{", indent_str, name));
@@ -376,7 +381,12 @@ fn to_text_format_inner(msg: &MessageValue, indent: usize) -> String {
                 for v in values {
                     match v {
                         FieldValue::Scalar(scalar) => {
-                            lines.push(format!("{}{}: {}", indent_str, name, scalar_to_text(scalar)));
+                            lines.push(format!(
+                                "{}{}: {}",
+                                indent_str,
+                                name,
+                                scalar_to_text(scalar)
+                            ));
                         }
                         FieldValue::Message(nested) => {
                             lines.push(format!("{}{} {{", indent_str, name));
@@ -409,7 +419,11 @@ fn scalar_to_text(scalar: &ScalarValue) -> String {
             if v.is_nan() {
                 "nan".to_string()
             } else if v.is_infinite() {
-                if *v > 0.0 { "inf".to_string() } else { "-inf".to_string() }
+                if *v > 0.0 {
+                    "inf".to_string()
+                } else {
+                    "-inf".to_string()
+                }
             } else {
                 format!("{}", v)
             }
@@ -420,7 +434,11 @@ fn scalar_to_text(scalar: &ScalarValue) -> String {
             if v.is_nan() {
                 "nan".to_string()
             } else if v.is_infinite() {
-                if *v > 0.0 { "inf".to_string() } else { "-inf".to_string() }
+                if *v > 0.0 {
+                    "inf".to_string()
+                } else {
+                    "-inf".to_string()
+                }
             } else {
                 format!("{}", v)
             }
@@ -483,7 +501,10 @@ mod tests {
             ("float", ScalarValue::Float(3.14)),
             ("double", ScalarValue::Double(2.718281828)),
             ("string", ScalarValue::String("hello world".to_string())),
-            ("string_escape", ScalarValue::String("line1\nline2\ttab\"quote".to_string())),
+            (
+                "string_escape",
+                ScalarValue::String("line1\nline2\ttab\"quote".to_string()),
+            ),
             ("bytes", ScalarValue::Bytes(vec![0, 1, 2, 255])),
         ];
 
@@ -510,9 +531,18 @@ mod tests {
     #[test]
     fn test_simple_message_json() {
         let mut msg = MessageValue::new();
-        msg.fields.insert("id".to_string(), FieldValue::Scalar(ScalarValue::Int32(123)));
-        msg.fields.insert("name".to_string(), FieldValue::Scalar(ScalarValue::String("test".to_string())));
-        msg.fields.insert("active".to_string(), FieldValue::Scalar(ScalarValue::Bool(true)));
+        msg.fields.insert(
+            "id".to_string(),
+            FieldValue::Scalar(ScalarValue::Int32(123)),
+        );
+        msg.fields.insert(
+            "name".to_string(),
+            FieldValue::Scalar(ScalarValue::String("test".to_string())),
+        );
+        msg.fields.insert(
+            "active".to_string(),
+            FieldValue::Scalar(ScalarValue::Bool(true)),
+        );
 
         assert_snapshot!(msg.to_json_pretty(), @r#"
         {
@@ -526,11 +556,19 @@ mod tests {
     #[test]
     fn test_nested_message_json() {
         let mut inner = MessageValue::new();
-        inner.fields.insert("value".to_string(), FieldValue::Scalar(ScalarValue::Int32(42)));
+        inner.fields.insert(
+            "value".to_string(),
+            FieldValue::Scalar(ScalarValue::Int32(42)),
+        );
 
         let mut outer = MessageValue::new();
-        outer.fields.insert("nested".to_string(), FieldValue::Message(Box::new(inner)));
-        outer.fields.insert("label".to_string(), FieldValue::Scalar(ScalarValue::String("outer".to_string())));
+        outer
+            .fields
+            .insert("nested".to_string(), FieldValue::Message(Box::new(inner)));
+        outer.fields.insert(
+            "label".to_string(),
+            FieldValue::Scalar(ScalarValue::String("outer".to_string())),
+        );
 
         assert_snapshot!(outer.to_json_pretty(), @r#"
         {
@@ -579,10 +617,20 @@ mod tests {
     #[test]
     fn test_text_format() {
         let mut msg = MessageValue::new();
-        msg.fields.insert("id".to_string(), FieldValue::Scalar(ScalarValue::Int32(42)));
-        msg.fields.insert("name".to_string(), FieldValue::Scalar(ScalarValue::String("Hello, World!".to_string())));
-        msg.fields.insert("score".to_string(), FieldValue::Scalar(ScalarValue::Double(3.14159)));
-        msg.fields.insert("active".to_string(), FieldValue::Scalar(ScalarValue::Bool(true)));
+        msg.fields
+            .insert("id".to_string(), FieldValue::Scalar(ScalarValue::Int32(42)));
+        msg.fields.insert(
+            "name".to_string(),
+            FieldValue::Scalar(ScalarValue::String("Hello, World!".to_string())),
+        );
+        msg.fields.insert(
+            "score".to_string(),
+            FieldValue::Scalar(ScalarValue::Double(3.14159)),
+        );
+        msg.fields.insert(
+            "active".to_string(),
+            FieldValue::Scalar(ScalarValue::Bool(true)),
+        );
         msg.fields.insert(
             "tags".to_string(),
             FieldValue::Repeated(vec![
@@ -590,7 +638,10 @@ mod tests {
                 FieldValue::Scalar(ScalarValue::String("protobuf".to_string())),
             ]),
         );
-        msg.fields.insert("data".to_string(), FieldValue::Scalar(ScalarValue::Bytes(vec![0xDE, 0xAD, 0xBE, 0xEF])));
+        msg.fields.insert(
+            "data".to_string(),
+            FieldValue::Scalar(ScalarValue::Bytes(vec![0xDE, 0xAD, 0xBE, 0xEF])),
+        );
 
         assert_snapshot!(msg.to_text_format(), @r#"
         active: true
@@ -606,12 +657,22 @@ mod tests {
     #[test]
     fn test_text_format_nested() {
         let mut inner = MessageValue::new();
-        inner.fields.insert("value".to_string(), FieldValue::Scalar(ScalarValue::Int32(42)));
-        inner.fields.insert("label".to_string(), FieldValue::Scalar(ScalarValue::String("nested".to_string())));
+        inner.fields.insert(
+            "value".to_string(),
+            FieldValue::Scalar(ScalarValue::Int32(42)),
+        );
+        inner.fields.insert(
+            "label".to_string(),
+            FieldValue::Scalar(ScalarValue::String("nested".to_string())),
+        );
 
         let mut outer = MessageValue::new();
-        outer.fields.insert("id".to_string(), FieldValue::Scalar(ScalarValue::Int32(1)));
-        outer.fields.insert("nested".to_string(), FieldValue::Message(Box::new(inner)));
+        outer
+            .fields
+            .insert("id".to_string(), FieldValue::Scalar(ScalarValue::Int32(1)));
+        outer
+            .fields
+            .insert("nested".to_string(), FieldValue::Message(Box::new(inner)));
 
         assert_snapshot!(outer.to_text_format(), @r#"
         id: 1
@@ -625,11 +686,9 @@ mod tests {
     #[test]
     fn test_arbitrary_test_case() {
         let data: &[u8] = &[
-            0x42, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
-            0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
-            0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
-            0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E,
-            0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26,
+            0x42, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
+            0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A,
+            0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26,
         ];
         let mut u = Unstructured::new(data);
 
@@ -723,9 +782,18 @@ mod tests {
         };
 
         let mut person = MessageValue::new();
-        person.fields.insert("id".to_string(), FieldValue::Scalar(ScalarValue::Int32(123)));
-        person.fields.insert("name".to_string(), FieldValue::Scalar(ScalarValue::String("Alice".to_string())));
-        person.fields.insert("email".to_string(), FieldValue::Scalar(ScalarValue::String("alice@example.com".to_string())));
+        person.fields.insert(
+            "id".to_string(),
+            FieldValue::Scalar(ScalarValue::Int32(123)),
+        );
+        person.fields.insert(
+            "name".to_string(),
+            FieldValue::Scalar(ScalarValue::String("Alice".to_string())),
+        );
+        person.fields.insert(
+            "email".to_string(),
+            FieldValue::Scalar(ScalarValue::String("alice@example.com".to_string())),
+        );
         person.fields.insert(
             "phone_numbers".to_string(),
             FieldValue::Repeated(vec![

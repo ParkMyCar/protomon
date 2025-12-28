@@ -5,7 +5,9 @@
 
 use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use protomon::codec::{Fixed32, Fixed64, PackedDecode, ProtoEncode, ProtoPacked, Sfixed32, Sfixed64};
+use protomon::codec::{
+    Fixed32, Fixed64, PackedDecode, ProtoEncode, ProtoPacked, Sfixed32, Sfixed64,
+};
 
 /// Generate packed encoded data for a given type (raw, no length prefix).
 fn encode_packed<T: ProtoEncode + Clone>(values: &[T]) -> Vec<u8> {
@@ -412,7 +414,6 @@ fn bench_packed_u32(c: &mut Criterion) {
                 })
             },
         );
-
     }
 
     group.finish();
@@ -535,7 +536,7 @@ fn bench_packed_sfixed32(c: &mut Criterion) {
 
     for count in [10, 100, 1000, 10000] {
         let values: Vec<Sfixed32> = (0..count)
-            .map(|i| Sfixed32(if i % 2 == 0 { i as i32 } else { -(i as i32) }))
+            .map(|i| Sfixed32(if i % 2 == 0 { i } else { -i }))
             .collect();
         let encoded = encode_packed(&values);
         let encoded_bytes = Bytes::from(encoded.clone());

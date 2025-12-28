@@ -109,7 +109,9 @@ pub struct FieldDescriptorProto {
 impl FieldDescriptorProto {
     /// Get the field label.
     pub fn label(&self) -> Label {
-        self.label.and_then(Label::from_i32).unwrap_or(Label::Optional)
+        self.label
+            .and_then(Label::from_i32)
+            .unwrap_or(Label::Optional)
     }
 
     /// Get the field type.
@@ -159,7 +161,6 @@ pub struct OneofDescriptorProto {
 #[derive(Debug, Clone, Default, ProtoMessageDerive)]
 pub struct OneofOptions {
     // Protomon extensions (field numbers 50000-50049 reserved for oneof options)
-
     /// Whether the oneof is nullable (wrapped in `Option<T>`).
     /// Default is true. When false, decoding fails if oneof is missing.
     /// Extension field 50000.
@@ -189,7 +190,6 @@ pub struct MessageOptions {
 #[derive(Debug, Clone, Default, ProtoMessageDerive)]
 pub struct FieldOptions {
     // Protomon extensions (field numbers 50001-50099)
-
     /// Use `Vec<T>` instead of `Repeated<T>` for repeated fields.
     /// Extension field 50001.
     #[proto(tag = 50001)]

@@ -74,9 +74,9 @@ pub fn generate_oneof_enum(
         let variant_name = format_ident!("{}", to_pascal_case(field_name));
         let tag = field.number.ok_or(Error::MissingFieldNumber)? as u32;
 
-        let proto_type = field.field_type().ok_or_else(|| {
-            Error::DecodeError("Missing field type in oneof field".into())
-        })?;
+        let proto_type = field
+            .field_type()
+            .ok_or_else(|| Error::DecodeError("Missing field type in oneof field".into()))?;
         let type_name = field.type_name.as_deref();
 
         // Get the Rust type for this field
@@ -112,7 +112,9 @@ pub fn generate_oneof_enum(
             let field_name = first_field.name.as_ref().ok_or(Error::MissingName)?;
             format_ident!("{}", to_pascal_case(field_name))
         } else {
-            return Err(Error::DecodeError("Oneof must have at least one field".into()));
+            return Err(Error::DecodeError(
+                "Oneof must have at least one field".into(),
+            ));
         };
 
         quote! {

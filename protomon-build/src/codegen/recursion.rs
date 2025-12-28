@@ -173,7 +173,7 @@ mod tests {
         FieldDescriptorProto {
             name: Some(name.to_string()),
             number: Some(1),
-            label: Some(1), // OPTIONAL
+            label: Some(1),   // OPTIONAL
             r#type: Some(11), // TYPE_MESSAGE
             type_name: Some(type_name.to_string()),
             ..Default::default()

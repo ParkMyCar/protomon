@@ -45,9 +45,8 @@ pub fn write_modules(
     let mod_decls: Vec<TokenStream> = modules
         .keys()
         .map(|name| {
-            let mod_name: syn::Ident = syn::parse_str(name).map_err(|e| {
-                Error::SynParse(format!("Invalid module name '{}': {}", name, e))
-            })?;
+            let mod_name: syn::Ident = syn::parse_str(name)
+                .map_err(|e| Error::SynParse(format!("Invalid module name '{}': {}", name, e)))?;
             Ok(quote!(pub mod #mod_name;))
         })
         .collect::<Result<Vec<_>, Error>>()?;

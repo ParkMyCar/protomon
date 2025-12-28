@@ -82,7 +82,10 @@ pub fn compile_fds(config: &Config, fds: FileDescriptorSet) -> Result<(), Error>
 }
 
 /// Generate code for a single .proto file.
-fn generate_file(ctx: &GenerationContext, file: &FileDescriptorProto) -> Result<TokenStream, Error> {
+fn generate_file(
+    ctx: &GenerationContext,
+    file: &FileDescriptorProto,
+) -> Result<TokenStream, Error> {
     let package = file.package.as_deref().unwrap_or("");
     let syntax = file.syntax.as_deref().unwrap_or("proto2");
     let is_proto3 = syntax == "proto3";

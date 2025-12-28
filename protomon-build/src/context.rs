@@ -18,6 +18,9 @@ pub struct TypeInfo {
     pub is_enum: bool,
     /// The Rust module path for this type.
     pub rust_module: String,
+    /// The number of components in the package (for correct type path resolution).
+    /// E.g., "com.example" has package_depth 2, "my_package.sub" also has 2.
+    pub package_depth: usize,
 }
 
 /// Information about a map entry message type.
@@ -51,6 +54,12 @@ impl<'a> GenerationContext<'a> {
             let file_name = file.name.clone().unwrap_or_default();
             let package = file.package.as_deref().unwrap_or("");
             let rust_module = package_to_module(package);
+            // Count package components correctly using dots, not underscores
+            let package_depth = if package.is_empty() {
+                0
+            } else {
+                package.split('.').count()
+            };
 
             let prefix = if package.is_empty() {
                 ".".to_string()
@@ -60,7 +69,15 @@ impl<'a> GenerationContext<'a> {
 
             // Register top-level messages
             for message in &file.message_type {
-                register_message(&mut type_registry, &mut map_entries, &file_name, &rust_module, &prefix, message);
+                register_message(
+                    &mut type_registry,
+                    &mut map_entries,
+                    &file_name,
+                    &rust_module,
+                    package_depth,
+                    &prefix,
+                    message,
+                );
             }
 
             // Register top-level enums
@@ -74,6 +91,7 @@ impl<'a> GenerationContext<'a> {
                             is_message: false,
                             is_enum: true,
                             rust_module: rust_module.clone(),
+                            package_depth,
                         },
                     );
                 }
@@ -114,7 +132,7 @@ impl<'a> GenerationContext<'a> {
         // Look up in type registry
         self.type_registry
             .get(proto_type_name)
-            .map(|info| proto_path_to_rust_type(proto_type_name, &info.rust_module))
+            .map(|info| proto_path_to_rust_type(proto_type_name, info.package_depth))
     }
 
     /// Check if a type is an enum.
@@ -133,6 +151,7 @@ fn register_message(
     map_entries: &mut HashMap<String, MapEntryInfo>,
     file_name: &str,
     rust_module: &str,
+    package_depth: usize,
     prefix: &str,
     message: &DescriptorProto,
 ) {
@@ -171,6 +190,7 @@ fn register_message(
                 is_message: true,
                 is_enum: false,
                 rust_module: rust_module.to_string(),
+                package_depth,
             },
         );
 
@@ -179,7 +199,15 @@ fn register_message(
 
         // Register nested messages
         for nested in &message.nested_type {
-            register_message(registry, map_entries, file_name, rust_module, &nested_prefix, nested);
+            register_message(
+                registry,
+                map_entries,
+                file_name,
+                rust_module,
+                package_depth,
+                &nested_prefix,
+                nested,
+            );
         }
 
         // Register nested enums
@@ -193,6 +221,7 @@ fn register_message(
                         is_message: false,
                         is_enum: true,
                         rust_module: rust_module.to_string(),
+                        package_depth,
                     },
                 );
             }
@@ -211,19 +240,15 @@ fn package_to_module(package: &str) -> String {
 
 /// Convert proto fully-qualified type name to Rust type path.
 ///
+/// The `package_depth` parameter indicates how many leading components are package names
+/// (not type names) and should be skipped.
+///
 /// Examples:
-/// - ".mypackage.MyMessage.NestedMessage" -> "MyMessage::NestedMessage"
-/// - ".com.example.MyMessage" (with rust_module "com_example") -> "MyMessage"
-pub fn proto_path_to_rust_type(proto_path: &str, rust_module: &str) -> String {
+/// - ".mypackage.MyMessage.NestedMessage" with package_depth=1 -> "MyMessage::NestedMessage"
+/// - ".com.example.MyMessage" with package_depth=2 -> "MyMessage"
+/// - ".my_package.sub.MyMessage" with package_depth=2 -> "MyMessage"
+pub fn proto_path_to_rust_type(proto_path: &str, package_depth: usize) -> String {
     let components: Vec<&str> = proto_path.trim_start_matches('.').split('.').collect();
-
-    // Determine how many package components to skip
-    // If rust_module is "com_example", that means 2 package levels
-    let package_depth = if rust_module.is_empty() {
-        0
-    } else {
-        rust_module.split('_').count()
-    };
 
     let type_components: Vec<_> = components
         .into_iter()
@@ -398,33 +423,41 @@ mod tests {
 
     #[test]
     fn test_proto_path_to_rust_type() {
-        // Single-level package
+        // Single-level package (package_depth = 1)
         assert_eq!(
-            proto_path_to_rust_type(".mypackage.MyMessage", "mypackage"),
+            proto_path_to_rust_type(".mypackage.MyMessage", 1),
             "MyMessage"
         );
         assert_eq!(
-            proto_path_to_rust_type(".mypackage.MyMessage.Nested", "mypackage"),
+            proto_path_to_rust_type(".mypackage.MyMessage.Nested", 1),
             "MyMessage::Nested"
         );
 
-        // Multi-level package
+        // Multi-level package (package_depth = 2)
         assert_eq!(
-            proto_path_to_rust_type(".com.example.MyMessage", "com_example"),
+            proto_path_to_rust_type(".com.example.MyMessage", 2),
             "MyMessage"
         );
         assert_eq!(
-            proto_path_to_rust_type(".com.example.api.MyMessage", "com_example_api"),
+            proto_path_to_rust_type(".com.example.api.MyMessage", 3),
             "MyMessage"
         );
 
-        // No package (empty rust_module)
+        // Package with underscores - this is the key fix!
+        // "my_package.sub" is 2 components, not 3
         assert_eq!(
-            proto_path_to_rust_type(".MyMessage", ""),
+            proto_path_to_rust_type(".my_package.sub.MyMessage", 2),
             "MyMessage"
         );
         assert_eq!(
-            proto_path_to_rust_type(".MyMessage.Nested", ""),
+            proto_path_to_rust_type(".my_package.sub.MyMessage.Nested", 2),
+            "MyMessage::Nested"
+        );
+
+        // No package (package_depth = 0)
+        assert_eq!(proto_path_to_rust_type(".MyMessage", 0), "MyMessage");
+        assert_eq!(
+            proto_path_to_rust_type(".MyMessage.Nested", 0),
             "MyMessage::Nested"
         );
     }

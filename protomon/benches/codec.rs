@@ -217,8 +217,7 @@ fn decode_benchmark(c: &mut Criterion) {
             &encoded_bytes,
             |b, data| {
                 b.iter(|| {
-                    let person =
-                        protomon_types::PersonStr::decode_message(data.clone()).unwrap();
+                    let person = protomon_types::PersonStr::decode_message(data.clone()).unwrap();
                     std::hint::black_box(person)
                 })
             },
