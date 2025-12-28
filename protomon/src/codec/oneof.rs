@@ -122,7 +122,6 @@ pub fn encoded_oneof_field_len<T: ProtoOneof>(field: &Option<T>) -> usize {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,8 +238,7 @@ mod tests {
         // Decode
         let mut slice = &buf[..];
         let (wire_type, tag) = wire::decode_key(&mut slice).unwrap();
-        let decoded =
-            Widget::decode_variant(tag, wire_type, &mut slice, 0).expect("decode failed");
+        let decoded = Widget::decode_variant(tag, wire_type, &mut slice, 0).expect("decode failed");
 
         assert_eq!(decoded, Some(widget));
     }

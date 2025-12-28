@@ -30,13 +30,14 @@
 use alloc::collections::BTreeMap;
 
 #[cfg(feature = "std")]
-use std::collections::HashMap;
-#[cfg(feature = "std")]
 use core::hash::Hash;
+#[cfg(feature = "std")]
+use std::collections::HashMap;
 
 use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
 use crate::leb128::LebCodec;
+use crate::util::CastFrom;
 use crate::wire::{self, WireType};
 
 /// Marker trait for types that can be used as protobuf map keys.
@@ -120,7 +121,7 @@ where
                 // Validate wire type matches key type
                 if wire_type != K::WIRE_TYPE {
                     return Err(DecodeErrorKind::InvalidWireType {
-                        value: wire_type as u8,
+                        value: wire_type.into_val(),
                     });
                 }
                 K::decode_into(&mut entry_buf, &mut key, value_offset)?;
@@ -129,7 +130,7 @@ where
                 // Validate wire type matches value type
                 if wire_type != V::WIRE_TYPE {
                     return Err(DecodeErrorKind::InvalidWireType {
-                        value: wire_type as u8,
+                        value: wire_type.into_val(),
                     });
                 }
                 V::decode_into(&mut entry_buf, &mut value, value_offset)?;
@@ -158,7 +159,7 @@ where
     let entry_len = key_field_len + value_field_len;
 
     // Write entry length prefix
-    (entry_len as u64).encode_leb128(buf);
+    u64::cast_from(entry_len).encode_leb128(buf);
 
     // Write key (tag = 1)
     wire::encode_key(K::WIRE_TYPE, 1, buf);
@@ -180,7 +181,7 @@ where
     let entry_len = key_field_len + value_field_len;
 
     // Length prefix + entry content
-    (entry_len as u64).encoded_leb128_len() + entry_len
+    u64::cast_from(entry_len).encoded_leb128_len() + entry_len
 }
 
 impl<K, V> ProtoType for BTreeMap<K, V>
@@ -225,9 +226,7 @@ where
     }
 
     fn encoded_len(&self) -> usize {
-        self.iter()
-            .map(|(k, v)| encoded_map_entry_len(k, v))
-            .sum()
+        self.iter().map(|(k, v)| encoded_map_entry_len(k, v)).sum()
     }
 }
 
@@ -305,9 +304,7 @@ where
     }
 
     fn encoded_len(&self) -> usize {
-        self.iter()
-            .map(|(k, v)| encoded_map_entry_len(k, v))
-            .sum()
+        self.iter().map(|(k, v)| encoded_map_entry_len(k, v)).sum()
     }
 }
 

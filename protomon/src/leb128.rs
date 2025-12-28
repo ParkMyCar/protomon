@@ -1,3 +1,8 @@
+//! LEB128 variable-length integer encoding/decoding.
+
+// This module uses `as` casts which have been thoroughly reviewed for correctness.
+#![allow(clippy::as_conversions)]
+
 use crate::error::DecodeErrorKind;
 
 /// Types that can be decoded from a LEB128 encoded integer.

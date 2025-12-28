@@ -2,12 +2,13 @@
 
 use crate::error::DecodeErrorKind;
 use crate::leb128::LebCodec;
+use crate::util::CastFrom;
 use crate::util::{likely, unlikely};
 
 /// Minimum value of a protobuf tag.
 pub const MINIMUM_TAG_VAL: u32 = 1;
 /// Maximum value of a protobuf tag.
-pub const MAXIMUM_TAG_VAL: u32 = (1 << 29) - 1;
+pub const MAXIMUM_TAG_VAL: u64 = (1 << 29) - 1;
 
 /// Encodes the provided tag and wire_type as a protobuf field key.
 ///
@@ -15,7 +16,7 @@ pub const MAXIMUM_TAG_VAL: u32 = (1 << 29) - 1;
 /// under the "Message Structure" section.
 #[inline]
 pub fn encode_key<B: bytes::BufMut>(wire_type: WireType, tag: u32, buf: &mut B) {
-    let key = (tag << 3) | wire_type as u32;
+    let key = (tag << 3) | u32::cast_from(wire_type.into_val());
     u32::encode_leb128(key, buf);
 }
 
@@ -53,6 +54,7 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
     };
 
     // The first three bits of the key are the wire type.
+    #[allow(clippy::as_conversions)]
     let wire_type = (value & 0b111) as u8;
     let wire_type = WireType::try_from_val(wire_type)?;
 
@@ -60,27 +62,30 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
     let tag = value >> 3;
 
     // Validate tag is in valid range (1 to 2^29-1)
-    if unlikely(tag == 0 || tag > MAXIMUM_TAG_VAL as u64) {
+    if unlikely(tag == 0 || tag > MAXIMUM_TAG_VAL) {
         return Err(DecodeErrorKind::InvalidKey {
             reason: "tag out of range",
         });
     }
+    // Just checked the bounds of 'tag' above.
+    #[allow(clippy::as_conversions)]
+    let tag = tag as u32;
 
-    Ok((wire_type, tag as u32))
+    Ok((wire_type, tag))
 }
 
 /// Decodes the length prefix for a length-delimited field.
 #[inline(always)]
 pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeErrorKind> {
     let chunk = buf.chunk();
-    // Fast path: most lengths fit in one byte (< 128)
+    // Fast path, most lengths fit in one byte (< 128).
     if likely(!chunk.is_empty() && chunk[0] < 0x80) {
-        let len = chunk[0] as usize;
+        let len = usize::cast_from(chunk[0]);
         buf.advance(1);
         Ok(len)
     } else {
         let (len, _) = u64::decode_leb128_buf(buf)?;
-        Ok(len as usize)
+        usize::try_from(len).map_err(|_| DecodeErrorKind::LengthOverflow { value: len })
     }
 }
 
@@ -146,11 +151,13 @@ pub enum WireType {
 // allows the compiler to make as many optimizations as possible.
 crate::util::assert_eq_size!(WireType, Result<WireType, ()>);
 
+#[allow(clippy::as_conversions)]
 impl WireType {
     /// Maximum value an [`WireType`] can be.
     const MAX_VAL: u8 = WireType::I32 as u8;
 
     // Compile-time check that our discriminants are contiguous 0..=MAX_VAL.
+    //
     // If someone reorders the enum, this will fail to compile.
     const _DISCRIMINANT_CHECK: () = {
         assert!(WireType::Varint as u8 == 0);
@@ -197,6 +204,7 @@ mod test {
     use alloc::vec::Vec;
     use proptest::prelude::*;
 
+    use crate::util::TruncatingCastFrom;
     use crate::wire::decode_key;
     use crate::wire::decode_len;
     use crate::wire::encode_key;
@@ -206,7 +214,7 @@ mod test {
     #[test]
     fn proptest_key_roundtrips() {
         fn arb_tag() -> impl Strategy<Value = u32> {
-            MINIMUM_TAG_VAL..=MAXIMUM_TAG_VAL
+            MINIMUM_TAG_VAL..=u32::truncating_cast_from(MAXIMUM_TAG_VAL)
         }
 
         fn arb_wiretype() -> impl Strategy<Value = WireType> {

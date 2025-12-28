@@ -3,6 +3,7 @@
 use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
 use crate::leb128::LebCodec;
+use crate::util::{CastFrom, ReinterpretCastFrom};
 use crate::wire::WireType;
 
 impl ProtoType for u64 {
@@ -72,7 +73,7 @@ impl ProtoDecode for i64 {
         dst: &mut Self,
         _offset: usize,
     ) -> Result<(), DecodeErrorKind> {
-        *dst = u64::decode_leb128_buf(buf).map(|(v, _)| v as i64)?;
+        *dst = u64::decode_leb128_buf(buf).map(|(v, _)| i64::reinterpret_cast_from(v))?;
         Ok(())
     }
 }
@@ -80,12 +81,12 @@ impl ProtoDecode for i64 {
 impl ProtoEncode for i64 {
     #[inline]
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-        (*self as u64).encode_leb128(buf);
+        u64::reinterpret_cast_from(*self).encode_leb128(buf);
     }
 
     #[inline]
     fn encoded_len(&self) -> usize {
-        (*self as u64).encoded_leb128_len()
+        u64::reinterpret_cast_from(*self).encoded_leb128_len()
     }
 }
 
@@ -101,7 +102,10 @@ impl ProtoDecode for i32 {
         _offset: usize,
     ) -> Result<(), DecodeErrorKind> {
         // Protobuf int32 is encoded as varint, sign-extended to 64 bits.
-        *dst = u64::decode_leb128_buf(buf).map(|(v, _)| v as i32)?;
+        let (v, _) = u64::decode_leb128_buf(buf)?;
+        let v = i64::reinterpret_cast_from(v);
+        *dst = i32::try_from(v)
+            .map_err(|_| DecodeErrorKind::IntegerOverflow { target_type: "i32" })?;
         Ok(())
     }
 }
@@ -110,12 +114,14 @@ impl ProtoEncode for i32 {
     #[inline]
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
         // Negative values are sign-extended to 64 bits.
-        (*self as i64 as u64).encode_leb128(buf);
+        let val = i64::cast_from(*self);
+        u64::reinterpret_cast_from(val).encode_leb128(buf);
     }
 
     #[inline]
     fn encoded_len(&self) -> usize {
-        (*self as i64 as u64).encoded_leb128_len()
+        let val = i64::cast_from(*self);
+        u64::reinterpret_cast_from(val).encoded_leb128_len()
     }
 }
 
@@ -138,7 +144,8 @@ impl ProtoDecode for bool {
 impl ProtoEncode for bool {
     #[inline]
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-        buf.put_u8(*self as u8);
+        let val = if *self { 1 } else { 0 };
+        buf.put_u8(val);
     }
 
     #[inline]
@@ -147,14 +154,15 @@ impl ProtoEncode for bool {
     }
 }
 
-#[inline]
-pub(crate) const fn zigzag_encode_32(n: i32) -> u32 {
-    ((n << 1) ^ (n >> 31)) as u32
+#[inline(always)]
+pub(crate) fn zigzag_encode_32(n: i32) -> u32 {
+    let val = (n << 1) ^ (n >> 31);
+    u32::reinterpret_cast_from(val)
 }
 
-#[inline]
-pub(crate) const fn zigzag_decode_32(n: u32) -> i32 {
-    ((n >> 1) as i32) ^ (-((n & 1) as i32))
+#[inline(always)]
+pub(crate) fn zigzag_decode_32(n: u32) -> i32 {
+    i32::reinterpret_cast_from(n >> 1) ^ -i32::reinterpret_cast_from(n & 1)
 }
 
 /// Wrapper for protobuf `sint32` (zigzag-encoded signed 32-bit integer).
@@ -197,14 +205,14 @@ impl ProtoEncode for Sint32 {
     }
 }
 
-#[inline]
-pub(crate) const fn zigzag_encode_64(n: i64) -> u64 {
-    ((n << 1) ^ (n >> 63)) as u64
+#[inline(always)]
+pub(crate) fn zigzag_encode_64(n: i64) -> u64 {
+    u64::reinterpret_cast_from((n << 1) ^ (n >> 63))
 }
 
-#[inline]
-pub(crate) const fn zigzag_decode_64(n: u64) -> i64 {
-    ((n >> 1) as i64) ^ (-((n & 1) as i64))
+#[inline(always)]
+pub(crate) fn zigzag_decode_64(n: u64) -> i64 {
+    i64::reinterpret_cast_from(n >> 1) ^ -i64::reinterpret_cast_from(n & 1)
 }
 
 /// Wrapper for protobuf `sint64` (zigzag-encoded signed 64-bit integer).

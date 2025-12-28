@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
 use crate::leb128::LebCodec;
+use crate::util::CastFrom;
 use crate::wire::WireType;
 
 /// Trait for protobuf message types.
@@ -58,7 +59,7 @@ pub fn decode_message_field<T: ProtoMessage, B: bytes::Buf>(
 #[inline]
 pub fn encode_message_field<T: ProtoMessage, B: bytes::BufMut>(msg: &T, buf: &mut B) {
     let msg_len = msg.encoded_message_len();
-    (msg_len as u64).encode_leb128(buf);
+    u64::cast_from(msg_len).encode_leb128(buf);
     msg.encode_message(buf);
 }
 
@@ -66,7 +67,7 @@ pub fn encode_message_field<T: ProtoMessage, B: bytes::BufMut>(msg: &T, buf: &mu
 #[inline]
 pub fn encoded_message_field_len<T: ProtoMessage>(msg: &T) -> usize {
     let msg_len = msg.encoded_message_len();
-    (msg_len as u64).encoded_leb128_len() + msg_len
+    u64::cast_from(msg_len).encoded_leb128_len() + msg_len
 }
 
 /// Lazy wrapper for nested message fields.
@@ -144,13 +145,13 @@ impl<T: ProtoMessage> ProtoDecode for LazyMessage<T> {
 impl<T: ProtoMessage> ProtoEncode for LazyMessage<T> {
     #[inline]
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-        (self.buf.len() as u64).encode_leb128(buf);
+        u64::cast_from(self.buf.len()).encode_leb128(buf);
         buf.put_slice(&self.buf);
     }
 
     #[inline]
     fn encoded_len(&self) -> usize {
-        (self.buf.len() as u64).encoded_leb128_len() + self.buf.len()
+        u64::cast_from(self.buf.len()).encoded_leb128_len() + self.buf.len()
     }
 }
 

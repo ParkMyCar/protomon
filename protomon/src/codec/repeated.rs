@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 
 use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
+use crate::util::{CastFrom, TruncatingCastFrom};
 use crate::wire::{self, WireType};
 
 #[cfg(feature = "smallvec")]
@@ -250,9 +251,12 @@ impl<T: ProtoType + 'static> ProtoDecode for Repeated<T> {
 
         let before = buf.remaining();
         crate::wire::skip_field(T::WIRE_TYPE, buf)?;
+        // `skip_field` will return an error if the value was larger then a u32.
+        #[allow(clippy::as_conversions)]
         let value_len = (before - buf.remaining()) as u32;
 
         // Store the offset for O(1) iteration later
+        #[allow(clippy::as_conversions)] // TODO(parker): change 'offset' to a u32.
         offsets.push(offset as u32);
         *values_len += value_len;
 
@@ -288,7 +292,7 @@ impl<T: ProtoType + ProtoEncode + ProtoDecode + Default + Clone + 'static> Proto
     fn encoded_len(&self) -> usize {
         match self {
             // For Lazy, we tracked the length during decode.
-            Self::Lazy { values_len, .. } => *values_len as usize,
+            Self::Lazy { values_len, .. } => usize::cast_from(*values_len),
             // For Owned, iterate and sum.
             Self::Owned { values } => values.iter().map(|v| v.encoded_len()).sum(),
         }
@@ -337,7 +341,7 @@ impl<T: ProtoType + ProtoEncode + ProtoDecode + Default + Clone + 'static> Proto
         let key_len = wire::encoded_key_len(tag);
         match self {
             // For Lazy, we tracked values_len during decode
-            Self::Lazy { values_len, .. } => count * key_len + *values_len as usize,
+            Self::Lazy { values_len, .. } => count * key_len + usize::cast_from(*values_len),
             // For Owned, iterate and sum
             Self::Owned { values } => values.iter().map(|v| key_len + v.encoded_len()).sum(),
         }
@@ -411,7 +415,7 @@ impl<T: ProtoDecode + Default> Iterator for RepeatedDecodeIter<'_, T> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let &offset = self.offset_iter.next()?;
-        let value_offset = offset as usize;
+        let value_offset = usize::cast_from(offset);
 
         // Use Bytes::slice() to maintain zero-copy semantics for nested decoding
         let mut buf_slice = self.buf.slice(value_offset..);

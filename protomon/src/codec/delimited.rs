@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
 use crate::leb128::LebCodec;
+use crate::util::CastFrom;
 use crate::wire::WireType;
 
 /// Wrapper for protobuf `bytes` field (length-delimited raw bytes).
@@ -56,13 +57,13 @@ impl ProtoDecode for ProtoBytes {
 impl ProtoEncode for ProtoBytes {
     #[inline]
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-        (self.0.len() as u64).encode_leb128(buf);
+        u64::cast_from(self.0.len()).encode_leb128(buf);
         buf.put_slice(&self.0);
     }
 
     #[inline]
     fn encoded_len(&self) -> usize {
-        (self.0.len() as u64).encoded_leb128_len() + self.0.len()
+        u64::cast_from(self.0.len()).encoded_leb128_len() + self.0.len()
     }
 }
 
@@ -140,13 +141,13 @@ impl ProtoDecode for ProtoString {
 impl ProtoEncode for ProtoString {
     #[inline]
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-        (self.0.len() as u64).encode_leb128(buf);
+        u64::cast_from(self.0.len()).encode_leb128(buf);
         buf.put_slice(&self.0);
     }
 
     #[inline]
     fn encoded_len(&self) -> usize {
-        (self.0.len() as u64).encoded_leb128_len() + self.0.len()
+        u64::cast_from(self.0.len()).encoded_leb128_len() + self.0.len()
     }
 }
 
@@ -217,13 +218,13 @@ impl ProtoDecode for String {
 impl ProtoEncode for String {
     #[inline]
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-        (self.len() as u64).encode_leb128(buf);
+        u64::cast_from(self.len()).encode_leb128(buf);
         buf.put_slice(self.as_bytes());
     }
 
     #[inline]
     fn encoded_len(&self) -> usize {
-        (self.len() as u64).encoded_leb128_len() + self.len()
+        u64::cast_from(self.len()).encoded_leb128_len() + self.len()
     }
 }
 
@@ -279,13 +280,13 @@ impl ProtoDecode for Vec<u8> {
 impl ProtoEncode for Vec<u8> {
     #[inline]
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-        (self.len() as u64).encode_leb128(buf);
+        u64::cast_from(self.len()).encode_leb128(buf);
         buf.put_slice(self);
     }
 
     #[inline]
     fn encoded_len(&self) -> usize {
-        (self.len() as u64).encoded_leb128_len() + self.len()
+        u64::cast_from(self.len()).encoded_leb128_len() + self.len()
     }
 }
 
@@ -321,13 +322,13 @@ where
 impl<const N: usize> ProtoEncode for [u8; N] {
     #[inline]
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-        (N as u64).encode_leb128(buf);
+        u64::cast_from(N).encode_leb128(buf);
         buf.put_slice(self);
     }
 
     #[inline]
     fn encoded_len(&self) -> usize {
-        (N as u64).encoded_leb128_len() + N
+        u64::cast_from(N).encoded_leb128_len() + N
     }
 }
 
@@ -460,7 +461,7 @@ mod tests {
         roundtrip_array([0u8; 0]);
         roundtrip_array([1u8, 2, 3]);
         roundtrip_array([0u8; 32]); // Common for SHA-256 hashes
-        // Note: Default only implemented for arrays up to size 32
+                                    // Note: Default only implemented for arrays up to size 32
     }
 
     #[test]

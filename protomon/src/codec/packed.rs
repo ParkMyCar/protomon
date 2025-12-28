@@ -8,9 +8,12 @@
 use bytes::Bytes;
 use core::marker::PhantomData;
 
-use crate::codec::{Fixed32, Fixed64, ProtoDecode, ProtoEncode, ProtoType, Sfixed32, Sfixed64, Sint32, Sint64};
+use crate::codec::{
+    Fixed32, Fixed64, ProtoDecode, ProtoEncode, ProtoType, Sfixed32, Sfixed64, Sint32, Sint64,
+};
 use crate::error::DecodeErrorKind;
 use crate::leb128::LebCodec;
+use crate::util::{CastFrom, TruncatingCastFrom};
 use crate::wire::WireType;
 use alloc::vec::Vec;
 
@@ -58,7 +61,10 @@ impl<T> Default for ProtoPacked<T> {
 
 impl<T> Clone for ProtoPacked<T> {
     fn clone(&self) -> Self {
-        Self { chunks: self.chunks.clone(), _marker: PhantomData }
+        Self {
+            chunks: self.chunks.clone(),
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -75,7 +81,10 @@ impl<T> ProtoPacked<T> {
     /// Create an empty packed field.
     #[inline]
     pub fn new() -> Self {
-        Self { chunks: ChunkVec::new(), _marker: PhantomData }
+        Self {
+            chunks: ChunkVec::new(),
+            _marker: PhantomData,
+        }
     }
 
     /// Create from a single chunk of bytes.
@@ -85,7 +94,10 @@ impl<T> ProtoPacked<T> {
         if !bytes.is_empty() {
             chunks.push(bytes);
         }
-        Self { chunks, _marker: PhantomData }
+        Self {
+            chunks,
+            _marker: PhantomData,
+        }
     }
 
     /// Add a chunk of packed data (called during decoding).
@@ -159,7 +171,7 @@ impl<T: ProtoType> ProtoType for ProtoPacked<T> {
 
 impl<T: ProtoEncode> ProtoEncode for ProtoPacked<T> {
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
-        let total_len = self.byte_len() as u64;
+        let total_len = u64::cast_from(self.byte_len());
         total_len.encode_leb128(buf);
         for chunk in &self.chunks {
             buf.put_slice(chunk);
@@ -167,7 +179,7 @@ impl<T: ProtoEncode> ProtoEncode for ProtoPacked<T> {
     }
 
     fn encoded_len(&self) -> usize {
-        let total_len = self.byte_len() as u64;
+        let total_len = u64::cast_from(self.byte_len());
         total_len.encoded_leb128_len() + self.byte_len()
     }
 }
@@ -224,6 +236,7 @@ trait PackedElement: Sized + Copy {
 macro_rules! impl_packed_fixed_4byte {
     ($($ty:ty => $read:expr),+ $(,)?) => {$(
         impl PackedElement for $ty {
+            #[allow(clippy::as_conversions)]
             #[inline(always)]
             unsafe fn read_le(ptr: *const u8) -> Self { $read(ptr) }
         }
@@ -247,6 +260,7 @@ macro_rules! impl_packed_fixed_4byte {
 macro_rules! impl_packed_fixed_8byte {
     ($($ty:ty => $read:expr),+ $(,)?) => {$(
         impl PackedElement for $ty {
+            #[allow(clippy::as_conversions)]
             #[inline(always)]
             unsafe fn read_le(ptr: *const u8) -> Self { $read(ptr) }
         }
@@ -280,10 +294,16 @@ impl_packed_fixed_8byte! {
 }
 
 #[inline]
-fn decode_packed_4byte<T: PackedElement>(data: &[u8], dst: &mut Vec<T>) -> Result<(), DecodeErrorKind> {
+fn decode_packed_4byte<T: PackedElement>(
+    data: &[u8],
+    dst: &mut Vec<T>,
+) -> Result<(), DecodeErrorKind> {
     let len = data.len();
     if len % 4 != 0 {
-        return Err(DecodeErrorKind::InvalidPackedLength { expected_multiple: 4, actual: len as u32 });
+        return Err(DecodeErrorKind::InvalidPackedLength {
+            expected_multiple: 4,
+            actual: u32::truncating_cast_from(len),
+        });
     }
 
     let count = len / 4;
@@ -313,10 +333,16 @@ fn decode_packed_4byte<T: PackedElement>(data: &[u8], dst: &mut Vec<T>) -> Resul
 }
 
 #[inline]
-fn decode_packed_8byte<T: PackedElement>(data: &[u8], dst: &mut Vec<T>) -> Result<(), DecodeErrorKind> {
+fn decode_packed_8byte<T: PackedElement>(
+    data: &[u8],
+    dst: &mut Vec<T>,
+) -> Result<(), DecodeErrorKind> {
     let len = data.len();
     if len % 8 != 0 {
-        return Err(DecodeErrorKind::InvalidPackedLength { expected_multiple: 8, actual: len as u32 });
+        return Err(DecodeErrorKind::InvalidPackedLength {
+            expected_multiple: 8,
+            actual: u32::truncating_cast_from(len),
+        });
     }
 
     let count = len / 8;
@@ -334,31 +360,39 @@ fn decode_packed_8byte<T: PackedElement>(data: &[u8], dst: &mut Vec<T>) -> Resul
     }
 
     if count > chunks * 2 {
-        unsafe { dst.push(T::read_le(ptr)); }
+        unsafe {
+            dst.push(T::read_le(ptr));
+        }
     }
 
     Ok(())
 }
 
 #[inline(always)]
+#[allow(clippy::as_conversions)] // Pointer cast for unaligned read.
 unsafe fn read_u32_le(ptr: *const u8) -> u32 {
     u32::from_le((ptr as *const u32).read_unaligned())
 }
 
 #[inline(always)]
+#[allow(clippy::as_conversions)] // Pointer cast for unaligned read.
 unsafe fn read_u64_le(ptr: *const u8) -> u64 {
     u64::from_le((ptr as *const u64).read_unaligned())
 }
 
 #[inline]
-fn decode_packed_varint<T, L: LebCodec, F>(data: &[u8], dst: &mut Vec<T>, convert: F) -> Result<(), DecodeErrorKind>
+fn decode_packed_varint<T, L: LebCodec, F>(
+    data: &[u8],
+    dst: &mut Vec<T>,
+    convert: F,
+) -> Result<(), DecodeErrorKind>
 where
     F: Fn(L) -> T,
 {
     let mut offset = 0;
     let len = data.len();
 
-    while offset + L::MAX_LEB_BYTES as usize <= len {
+    while offset + usize::cast_from(L::MAX_LEB_BYTES) <= len {
         let (value, bytes_read) = unsafe { L::decode_leb128(&data[offset..])? };
         dst.push(convert(value));
         offset += bytes_read;
@@ -376,6 +410,7 @@ macro_rules! impl_packed_varint {
     ($ty:ty, $leb:ty, $cap_div:expr, $convert:expr) => {
         impl PackedDecode for $ty {
             #[inline]
+            #[allow(clippy::as_conversions)]
             fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeErrorKind> {
                 decode_packed_varint::<$ty, $leb, _>(data, dst, $convert)
             }
@@ -396,6 +431,7 @@ impl_packed_varint!(i32, u64, 2, |v: u64| v as i32);
 impl_packed_varint!(i64, u64, 2, |v: u64| v as i64);
 impl_packed_varint!(bool, u64, 1, |v: u64| v != 0);
 
+#[allow(clippy::as_conversions)]
 impl PackedDecode for Sint32 {
     #[inline]
     fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeErrorKind> {
@@ -412,6 +448,7 @@ impl PackedDecode for Sint32 {
     }
 }
 
+#[allow(clippy::as_conversions)]
 impl PackedDecode for Sint64 {
     #[inline]
     fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeErrorKind> {
@@ -470,7 +507,10 @@ mod tests {
         packed.push_chunk(chunk2);
 
         assert_eq!(packed.chunk_count(), 2);
-        assert_eq!(packed.decode().unwrap(), vec![Fixed32(1), Fixed32(2), Fixed32(3), Fixed32(4)]);
+        assert_eq!(
+            packed.decode().unwrap(),
+            vec![Fixed32(1), Fixed32(2), Fixed32(3), Fixed32(4)]
+        );
     }
 
     #[test]
