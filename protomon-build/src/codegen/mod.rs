@@ -72,7 +72,8 @@ pub fn compile_fds(config: &Config, fds: FileDescriptorSet) -> Result<(), Error>
     for file in &fds.file {
         let code = generate_file(&ctx, file)?;
         let module_path = file_to_module_path(file);
-        modules.insert(module_path, code);
+        // Extend existing module content if multiple files share the same package
+        modules.entry(module_path).or_default().extend(code);
     }
 
     // Write output files
