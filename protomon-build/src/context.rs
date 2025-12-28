@@ -243,18 +243,18 @@ fn package_to_module(package: &str) -> String {
 /// The `package_depth` parameter indicates how many leading components are package names
 /// (not type names) and should be skipped.
 ///
+/// For nested types, parent type names become module names (snake_case),
+/// while the final type name stays PascalCase.
+///
 /// Examples:
-/// - ".mypackage.MyMessage.NestedMessage" with package_depth=1 -> "MyMessage::NestedMessage"
+/// - ".mypackage.MyMessage" with package_depth=1 -> "MyMessage"
+/// - ".mypackage.MyMessage.NestedMessage" with package_depth=1 -> "my_message::NestedMessage"
 /// - ".com.example.MyMessage" with package_depth=2 -> "MyMessage"
 /// - ".my_package.sub.MyMessage" with package_depth=2 -> "MyMessage"
 pub fn proto_path_to_rust_type(proto_path: &str, package_depth: usize) -> String {
     let components: Vec<&str> = proto_path.trim_start_matches('.').split('.').collect();
 
-    let type_components: Vec<_> = components
-        .into_iter()
-        .skip(package_depth)
-        .map(to_rust_type_name)
-        .collect();
+    let type_components: Vec<_> = components.into_iter().skip(package_depth).collect();
 
     // Fallback: if we've skipped everything, use the last component of the proto_path
     if type_components.is_empty() {
@@ -263,8 +263,26 @@ pub fn proto_path_to_rust_type(proto_path: &str, package_depth: usize) -> String
             .next()
             .map(to_rust_type_name)
             .unwrap_or_default()
+    } else if type_components.len() == 1 {
+        // Single component: just the type name (PascalCase)
+        to_rust_type_name(type_components[0])
     } else {
-        type_components.join("::")
+        // Multiple components: parent types become modules (snake_case),
+        // the last component is the type name (PascalCase)
+        let mut result = String::new();
+        for (i, component) in type_components.iter().enumerate() {
+            if i > 0 {
+                result.push_str("::");
+            }
+            if i == type_components.len() - 1 {
+                // Last component: type name (PascalCase)
+                result.push_str(&to_rust_type_name(component));
+            } else {
+                // Parent components: module names (snake_case)
+                result.push_str(&to_rust_field_name(component));
+            }
+        }
+        result
     }
 }
 
@@ -428,9 +446,10 @@ mod tests {
             proto_path_to_rust_type(".mypackage.MyMessage", 1),
             "MyMessage"
         );
+        // Nested types: parent becomes snake_case module
         assert_eq!(
             proto_path_to_rust_type(".mypackage.MyMessage.Nested", 1),
-            "MyMessage::Nested"
+            "my_message::Nested"
         );
 
         // Multi-level package (package_depth = 2)
@@ -451,14 +470,20 @@ mod tests {
         );
         assert_eq!(
             proto_path_to_rust_type(".my_package.sub.MyMessage.Nested", 2),
-            "MyMessage::Nested"
+            "my_message::Nested"
         );
 
         // No package (package_depth = 0)
         assert_eq!(proto_path_to_rust_type(".MyMessage", 0), "MyMessage");
         assert_eq!(
             proto_path_to_rust_type(".MyMessage.Nested", 0),
-            "MyMessage::Nested"
+            "my_message::Nested"
+        );
+
+        // Deeply nested types
+        assert_eq!(
+            proto_path_to_rust_type(".pkg.Outer.Middle.Inner", 1),
+            "outer::middle::Inner"
         );
     }
 }
