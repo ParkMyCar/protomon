@@ -42,9 +42,7 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
     //
     // Note: We hint to the compiler the likely paths for better optimization.
     let value = if unlikely(chunk_len == 0) {
-        return Err(DecodeErrorKind::InvalidKey {
-            reason: "empty buffer",
-        });
+        return Err(DecodeErrorKind::invalid_key("empty buffer"));
     } else if likely(chunk[0] < 0x80 || chunk_len > 10) {
         let (value, bytes_read) = unsafe { u64::decode_leb128(chunk)? };
         buf.advance(bytes_read);
@@ -63,9 +61,7 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
 
     // Validate tag is in valid range (1 to 2^29-1)
     if unlikely(tag == 0 || tag > MAXIMUM_TAG_VAL) {
-        return Err(DecodeErrorKind::InvalidKey {
-            reason: "tag out of range",
-        });
+        return Err(DecodeErrorKind::invalid_key("tag out of range"));
     }
     // Just checked the bounds of 'tag' above.
     #[allow(clippy::as_conversions)]
@@ -85,7 +81,7 @@ pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeErrorKind> 
         Ok(len)
     } else {
         let (len, _) = u64::decode_leb128_buf(buf)?;
-        usize::try_from(len).map_err(|_| DecodeErrorKind::LengthOverflow { value: len })
+        usize::try_from(len).map_err(|_| DecodeErrorKind::length_overflow(len))
     }
 }
 
@@ -105,12 +101,12 @@ pub fn skip_field<B: bytes::Buf>(wire_type: WireType, buf: &mut B) -> Result<(),
         WireType::Len => decode_len(buf)?,
         WireType::I32 => 4,
         WireType::SGroup | WireType::EGroup => {
-            return Err(DecodeErrorKind::DeprecatedGroupEncoding);
+            return Err(DecodeErrorKind::deprecated_group_encoding());
         }
     };
 
     if buf.remaining() < skip_len {
-        return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+        return Err(DecodeErrorKind::unexpected_end_of_buffer());
     }
     buf.advance(skip_len);
     Ok(())
@@ -179,6 +175,8 @@ impl WireType {
             let wire_type: WireType = unsafe { core::mem::transmute(value) };
             Ok(wire_type)
         } else {
+            // Note: We can't call the cold constructor here because this is const fn.
+            // The error path is still unlikely, but we rely on the const fn inlining.
             Err(DecodeErrorKind::InvalidWireType { value })
         }
     }

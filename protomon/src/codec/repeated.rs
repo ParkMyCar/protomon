@@ -526,7 +526,7 @@ where
         // Packed encoding - decode length, then decode all values
         let len = wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+            return Err(DecodeErrorKind::unexpected_end_of_buffer());
         }
         // Read the packed data into a slice and decode values
         let data = buf.copy_to_bytes(len);

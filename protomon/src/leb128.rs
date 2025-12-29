@@ -61,14 +61,14 @@ pub trait LebCodec: Sized {
         let mut buffer = [0u8; 16];
         for i in 0..Self::MAX_LEB_BYTES as usize {
             if !buf.has_remaining() {
-                return Err(DecodeErrorKind::InvalidVarInt);
+                return Err(DecodeErrorKind::invalid_varint());
             }
             buffer[i] = buf.get_u8();
             if buffer[i] < 0x80 {
                 return unsafe { Self::decode_leb128(&buffer[..]) };
             }
         }
-        Err(DecodeErrorKind::InvalidVarInt)
+        Err(DecodeErrorKind::invalid_varint())
     }
 
     /// Encode `self` as a LEB128 variable length integer into the provided
@@ -165,7 +165,7 @@ impl LebCodec for u64 {
 
         // Uh oh! We've read 10 bytes and either didn't find the final byte or
         // we overflowed u64::MAX.
-        Err(DecodeErrorKind::InvalidVarInt)
+        Err(DecodeErrorKind::invalid_varint())
     }
 
     #[inline]
@@ -343,7 +343,7 @@ impl LebCodec for u32 {
 
         // Uh oh! We've read 5 bytes and either didn't find the final byte or
         // we overflowed u32::MAX.
-        Err(DecodeErrorKind::InvalidVarInt)
+        Err(DecodeErrorKind::invalid_varint())
     }
 
     #[inline]

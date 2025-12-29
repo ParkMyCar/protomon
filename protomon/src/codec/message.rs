@@ -47,7 +47,7 @@ pub fn decode_message_field<T: ProtoMessage, B: bytes::Buf>(
 ) -> Result<T, DecodeErrorKind> {
     let len = crate::wire::decode_len(buf)?;
     if buf.remaining() < len {
-        return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+        return Err(DecodeErrorKind::unexpected_end_of_buffer());
     }
     let message_bytes = buf.copy_to_bytes(len);
     T::decode_message(message_bytes)
@@ -135,7 +135,7 @@ impl<T: ProtoMessage> ProtoDecode for LazyMessage<T> {
     ) -> Result<(), DecodeErrorKind> {
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+            return Err(DecodeErrorKind::unexpected_end_of_buffer());
         }
         *dst = LazyMessage::new(buf.copy_to_bytes(len));
         Ok(())
@@ -176,7 +176,7 @@ impl<T> core::fmt::Debug for LazyMessage<T> {
 pub fn skip_len_field<B: bytes::Buf>(buf: &mut B) -> Result<bytes::Bytes, DecodeErrorKind> {
     let len = crate::wire::decode_len(buf)?;
     if buf.remaining() < len {
-        return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+        return Err(DecodeErrorKind::unexpected_end_of_buffer());
     }
     Ok(buf.copy_to_bytes(len))
 }

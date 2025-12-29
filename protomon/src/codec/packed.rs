@@ -182,7 +182,7 @@ impl<T: ProtoType> ProtoDecode for ProtoPacked<T> {
         use bytes::Buf;
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+            return Err(DecodeErrorKind::unexpected_end_of_buffer());
         }
         let chunk = buf.copy_to_bytes(len);
         dst.push_chunk(chunk);
@@ -363,10 +363,10 @@ fn decode_packed_4byte<T: PackedElement>(
 ) -> Result<(), DecodeErrorKind> {
     let len = data.len();
     if len % 4 != 0 {
-        return Err(DecodeErrorKind::InvalidPackedLength {
-            expected_multiple: 4,
-            actual: u32::truncating_cast_from(len),
-        });
+        return Err(DecodeErrorKind::invalid_packed_length(
+            4,
+            u32::truncating_cast_from(len),
+        ));
     }
 
     let count = len / 4;
@@ -402,10 +402,10 @@ fn decode_packed_8byte<T: PackedElement>(
 ) -> Result<(), DecodeErrorKind> {
     let len = data.len();
     if len % 8 != 0 {
-        return Err(DecodeErrorKind::InvalidPackedLength {
-            expected_multiple: 8,
-            actual: u32::truncating_cast_from(len),
-        });
+        return Err(DecodeErrorKind::invalid_packed_length(
+            8,
+            u32::truncating_cast_from(len),
+        ));
     }
 
     let count = len / 8;

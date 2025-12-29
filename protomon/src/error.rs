@@ -16,7 +16,77 @@ pub enum DecodeErrorKind {
     IntegerOverflow { target_type: &'static str },
 }
 
+// Cold error constructors - these are marked #[cold] and #[inline(never)]
+// to ensure error paths don't bloat the instruction cache on hot paths.
+impl DecodeErrorKind {
+    #[cold]
+    #[inline(never)]
+    pub fn invalid_wire_type(value: u8) -> Self {
+        DecodeErrorKind::InvalidWireType { value }
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub fn invalid_key(reason: &'static str) -> Self {
+        DecodeErrorKind::InvalidKey { reason }
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub fn invalid_varint() -> Self {
+        DecodeErrorKind::InvalidVarInt
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub fn unexpected_end_of_buffer() -> Self {
+        DecodeErrorKind::UnexpectedEndOfBuffer
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub fn deprecated_group_encoding() -> Self {
+        DecodeErrorKind::DeprecatedGroupEncoding
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub fn invalid_utf8() -> Self {
+        DecodeErrorKind::InvalidUtf8
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub fn length_overflow(value: u64) -> Self {
+        DecodeErrorKind::LengthOverflow { value }
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub fn length_mismatch(expected: usize, actual: usize) -> Self {
+        DecodeErrorKind::LengthMismatch { expected, actual }
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub fn invalid_packed_length(expected_multiple: u8, actual: u32) -> Self {
+        DecodeErrorKind::InvalidPackedLength {
+            expected_multiple,
+            actual,
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub fn integer_overflow(target_type: &'static str) -> Self {
+        DecodeErrorKind::IntegerOverflow { target_type }
+    }
+}
+
 impl fmt::Display for DecodeErrorKind {
+    // Error formatting should never be inlined - it's only called when
+    // displaying errors, which is not on the hot decode path.
+    #[inline(never)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DecodeErrorKind::InvalidWireType { value } => {
