@@ -8,7 +8,7 @@ use crate::util::{likely, unlikely};
 /// Minimum value of a protobuf tag.
 pub const MINIMUM_TAG_VAL: u32 = 1;
 /// Maximum value of a protobuf tag.
-pub const MAXIMUM_TAG_VAL: u64 = (1 << 29) - 1;
+pub const MAXIMUM_TAG_VAL: u32 = (1 << 29) - 1;
 
 /// Encodes the provided tag and wire_type as a protobuf field key.
 ///
@@ -48,16 +48,18 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
 
     // Read a varint from the front of our buffer.
     //
-    // Note: We hint to the compiler the likely paths for better optimization.
+    // N.B. Keys always fit in u32, the max tag value is `2^29-1` and thus the
+    // max key value is `(2^29-1) << 3 | 7` which is `u32::MAX`.
+    // N.B We hint to the compiler the likely paths for better optimization.
     let value = if unlikely(chunk_len == 0) {
         return Err(DecodeError::invalid_key("empty buffer"));
-    } else if likely(chunk[0] < 0x80 || chunk_len > 10) {
-        let (value, bytes_read) = unsafe { u64::decode_leb128(chunk.as_ptr()) }
+    } else if likely(chunk[0] < 0x80 || chunk_len >= 5) {
+        let (value, bytes_read) = unsafe { u32::decode_leb128(chunk.as_ptr()) }
             .ok_or_else(DecodeErrorKind::invalid_varint)?;
         buf.advance(usize::cast_from(bytes_read.get()));
         value
     } else {
-        u64::decode_leb128_buf(buf)?.0
+        u32::decode_leb128_buf(buf)?.0
     };
 
     // The first three bits of the key are the wire type.
@@ -72,9 +74,6 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
     if unlikely(tag == 0 || tag > MAXIMUM_TAG_VAL) {
         return Err(DecodeError::invalid_key("tag out of range"));
     }
-    // Just checked the bounds of 'tag' above.
-    #[allow(clippy::as_conversions)]
-    let tag = tag as u32;
 
     Ok((wire_type, tag))
 }
@@ -212,7 +211,6 @@ mod test {
     use alloc::vec::Vec;
     use proptest::prelude::*;
 
-    use crate::util::TruncatingCastFrom;
     use crate::wire::decode_key;
     use crate::wire::decode_len;
     use crate::wire::encode_key;
@@ -222,7 +220,7 @@ mod test {
     #[test]
     fn proptest_key_roundtrips() {
         fn arb_tag() -> impl Strategy<Value = u32> {
-            MINIMUM_TAG_VAL..=u32::truncating_cast_from(MAXIMUM_TAG_VAL)
+            MINIMUM_TAG_VAL..=MAXIMUM_TAG_VAL
         }
 
         fn arb_wiretype() -> impl Strategy<Value = WireType> {
