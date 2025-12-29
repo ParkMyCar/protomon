@@ -1,0 +1,13 @@
+[package]
+name = "protomon-conformance"
+version = "0.1.0"
+edition = "2021"
+description = "Conformance tests for protomon"
+publish = false
+
+[dependencies]
+protomon = { path = "../protomon", features = ["derive", "std"] }
+bytes = "1"
+
+[build-dependencies]
+protomon-build = { path = "../protomon-build" }

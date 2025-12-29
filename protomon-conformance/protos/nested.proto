@@ -1,0 +1,48 @@
+// Conformance tests for nested messages.
+syntax = "proto3";
+
+package conformance;
+
+// Simple nested message.
+message Outer {
+  message Inner {
+    int32 value = 1;
+    string name = 2;
+  }
+
+  int32 id = 1;
+  Inner inner = 2;
+  repeated Inner items = 3;
+}
+
+// Deeply nested structure.
+message Level0 {
+  message Level1 {
+    message Level2 {
+      message Level3 {
+        int32 value = 1;
+      }
+      Level3 next = 1;
+      int32 value = 2;
+    }
+    Level2 next = 1;
+    int32 value = 2;
+  }
+  Level1 next = 1;
+  int32 value = 2;
+}
+
+// Recursive-like structure (not truly recursive, but tests message references).
+message Node {
+  int32 id = 1;
+  string label = 2;
+  repeated Node children = 3;
+}
+
+// Optional nested message (tests presence).
+message OptionalNested {
+  message Payload {
+    int32 value = 1;
+  }
+  optional Payload payload = 1;
+}

@@ -59,7 +59,9 @@ pub use delimited::{ProtoBytes, ProtoString};
 
 // Re-export repeated field types
 #[cfg(feature = "alloc")]
-pub use repeated::{ProtoRepeated, Repeated, RepeatedDecodeIter, RepeatedIter};
+pub use repeated::{
+    decode_repeated_into, ProtoRepeated, Repeated, RepeatedDecodeIter, RepeatedIter,
+};
 
 // Re-export message types and helpers
 pub use message::{

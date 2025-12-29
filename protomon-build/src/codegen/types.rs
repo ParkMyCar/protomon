@@ -19,6 +19,8 @@ pub struct RustType {
     pub use_lazy_repeated: bool,
     /// Whether to wrap in `Box<T>`.
     pub is_boxed: bool,
+    /// Whether this is a packed repeated field (uses `ProtoPacked<T>`).
+    pub is_packed: bool,
 }
 
 /// Map proto type to Rust type.
@@ -98,12 +100,38 @@ pub fn proto_type_to_rust(
     let base_type =
         scalar_type_to_rust_inner(ctx, proto_type, type_name, is_lazy, fixed_array, use_vec)?;
 
+    // In proto3, repeated scalar fields are packed by default.
+    // Messages, strings, and bytes are never packed (they're length-delimited).
+    let is_packable_type = matches!(
+        proto_type,
+        Type::Int32
+            | Type::Int64
+            | Type::Uint32
+            | Type::Uint64
+            | Type::Sint32
+            | Type::Sint64
+            | Type::Fixed32
+            | Type::Fixed64
+            | Type::Sfixed32
+            | Type::Sfixed64
+            | Type::Float
+            | Type::Double
+            | Type::Bool
+            | Type::Enum
+    );
+
+    // Use packed encoding for repeated scalar types in proto3 (default behavior).
+    // In proto2, fields must be explicitly marked [packed=true], but we'll treat
+    // proto3 as always packed for these types.
+    let is_packed = is_repeated && is_packable_type && is_proto3 && !use_vec;
+
     Ok(RustType {
         base_type,
         is_optional,
         is_repeated,
         use_lazy_repeated: !use_vec,
         is_boxed,
+        is_packed,
     })
 }
 
@@ -239,6 +267,7 @@ fn scalar_type_to_rust_inner(
 /// The wrapping order is:
 /// - For optional boxed fields: `Option<Box<T>>` (`None` doesn't allocate)
 /// - For repeated boxed fields: `Repeated<Box<T>>` or `Vec<Box<T>>` (each element is boxed)
+/// - For packed repeated fields: `ProtoPacked<T>` (scalar types in proto3)
 /// - For singular boxed fields: `Box<T>`
 pub fn build_full_type(rust_type: &RustType) -> TokenStream {
     let base = &rust_type.base_type;
@@ -252,7 +281,11 @@ pub fn build_full_type(rust_type: &RustType) -> TokenStream {
 
     // Then apply repeated/optional wrappers
     if rust_type.is_repeated {
-        if rust_type.use_lazy_repeated {
+        if rust_type.is_packed {
+            // Packed repeated scalar fields use ProtoPacked<T>
+            quote!(protomon::codec::ProtoPacked<#inner>)
+        } else if rust_type.use_lazy_repeated {
+            // Non-packed repeated fields (messages, strings, bytes) use Repeated<T>
             quote!(protomon::codec::Repeated<#inner>)
         } else {
             quote!(Vec<#inner>)

@@ -1,0 +1,75 @@
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+
+# Proto libraries for conformance tests
+proto_library(
+    name = "scalars_proto",
+    srcs = ["protos/scalars.proto"],
+)
+
+proto_library(
+    name = "repeated_proto",
+    srcs = ["protos/repeated.proto"],
+)
+
+proto_library(
+    name = "nested_proto",
+    srcs = ["protos/nested.proto"],
+)
+
+proto_library(
+    name = "edge_cases_proto",
+    srcs = ["protos/edge_cases.proto"],
+)
+
+# C++ proto libraries for the generator
+cc_proto_library(
+    name = "scalars_cc_proto",
+    deps = [":scalars_proto"],
+)
+
+cc_proto_library(
+    name = "repeated_cc_proto",
+    deps = [":repeated_proto"],
+)
+
+cc_proto_library(
+    name = "nested_cc_proto",
+    deps = [":nested_proto"],
+)
+
+cc_proto_library(
+    name = "edge_cases_cc_proto",
+    deps = [":edge_cases_proto"],
+)
+
+# Generator binary that encodes all test cases
+cc_binary(
+    name = "generate_binaries",
+    srcs = ["generate_binaries.cpp"],
+    deps = [
+        ":scalars_cc_proto",
+        ":repeated_cc_proto",
+        ":nested_cc_proto",
+        ":edge_cases_cc_proto",
+        "@protobuf//:protobuf",
+        "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/flags:parse",
+        "@abseil-cpp//absl/strings",
+    ],
+    data = glob(["testdata/**/*.textproto"]),
+)
+
+# Filegroup for all test data
+filegroup(
+    name = "testdata",
+    srcs = glob(
+        [
+            "testdata/**/*.textproto",
+            "testdata/**/*.bin",
+            "testdata/**/*.txt",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//visibility:public"],
+)

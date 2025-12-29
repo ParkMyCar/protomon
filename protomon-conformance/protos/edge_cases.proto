@@ -1,0 +1,70 @@
+// Conformance tests for edge cases and boundary values.
+syntax = "proto3";
+
+package conformance;
+
+// Tests for field number edge cases.
+message FieldNumbers {
+  int32 field_1 = 1;           // Minimum field number
+  int32 field_15 = 15;         // Last single-byte field tag
+  int32 field_16 = 16;         // First two-byte field tag
+  int32 field_2047 = 2047;     // Last two-byte field tag
+  int32 field_2048 = 2048;     // First three-byte field tag
+  int32 field_max = 536870911; // Maximum field number (2^29 - 1)
+}
+
+// Tests for wire type variations.
+message WireTypes {
+  // Varint (wire type 0)
+  int32 varint_int32 = 1;
+  int64 varint_int64 = 2;
+  uint32 varint_uint32 = 3;
+  uint64 varint_uint64 = 4;
+  sint32 varint_sint32 = 5;
+  sint64 varint_sint64 = 6;
+  bool varint_bool = 7;
+
+  // 64-bit (wire type 1)
+  fixed64 i64_fixed64 = 8;
+  sfixed64 i64_sfixed64 = 9;
+  double i64_double = 10;
+
+  // Length-delimited (wire type 2)
+  string len_string = 11;
+  bytes len_bytes = 12;
+  NestedForWireType len_message = 13;
+  repeated int32 len_packed = 14;
+
+  // 32-bit (wire type 5)
+  fixed32 i32_fixed32 = 15;
+  sfixed32 i32_sfixed32 = 16;
+  float i32_float = 17;
+
+  message NestedForWireType {
+    int32 value = 1;
+  }
+}
+
+// Tests for multiple fields with same number (last one wins).
+// Note: This is valid protobuf - later occurrences override earlier ones.
+message MultipleOccurrences {
+  int32 value = 1;
+}
+
+// Tests for optional field presence (proto3 explicit optional).
+message OptionalFields {
+  optional int32 opt_int32 = 1;
+  optional string opt_string = 2;
+  optional bool opt_bool = 3;
+}
+
+// Empty message.
+message Empty {}
+
+// Message with only default values (should encode to empty).
+message AllDefaults {
+  int32 zero_int = 1;
+  string empty_string = 2;
+  bool false_bool = 3;
+  double zero_double = 4;
+}

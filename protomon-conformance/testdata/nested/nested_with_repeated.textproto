@@ -1,0 +1,17 @@
+id: 100
+inner {
+  value: 1
+  name: "first"
+}
+items {
+  value: 10
+  name: "item1"
+}
+items {
+  value: 20
+  name: "item2"
+}
+items {
+  value: 30
+  name: "item3"
+}

@@ -1,0 +1,21 @@
+# Edge case conformance tests
+# Format: test_name message_type
+
+# Field number edge cases
+field_numbers_all FieldNumbers
+field_numbers_min FieldNumbers
+field_numbers_max FieldNumbers
+
+# Wire types
+wire_types_all WireTypes
+
+# Empty message
+empty Empty
+
+# All default values (should encode to empty in proto3)
+all_defaults AllDefaults
+
+# Optional field presence
+optional_all_absent OptionalFields
+optional_all_present OptionalFields
+optional_int_only OptionalFields

@@ -1,0 +1,33 @@
+# Repeated field conformance tests
+# Format: test_name message_type
+
+# Empty repeated fields
+repeated_int32_empty RepeatedInt32
+repeated_string_empty RepeatedString
+
+# Single element
+repeated_int32_single RepeatedInt32
+repeated_string_single RepeatedString
+
+# Multiple elements
+repeated_int32_multiple RepeatedInt32
+repeated_string_multiple RepeatedString
+repeated_bytes_multiple RepeatedBytes
+
+# Packed numeric types
+repeated_int32_packed RepeatedInt32
+repeated_int64_packed RepeatedInt64
+repeated_uint32_packed RepeatedUint32
+repeated_uint64_packed RepeatedUint64
+repeated_sint32_packed RepeatedSint32
+repeated_sint64_packed RepeatedSint64
+repeated_bool_packed RepeatedBool
+repeated_fixed32_packed RepeatedFixed32
+repeated_sfixed32_packed RepeatedSfixed32
+repeated_fixed64_packed RepeatedFixed64
+repeated_sfixed64_packed RepeatedSfixed64
+repeated_float_packed RepeatedFloat
+repeated_double_packed RepeatedDouble
+
+# All repeated scalars
+repeated_all RepeatedScalars

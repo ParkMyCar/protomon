@@ -1,0 +1,2 @@
+# Int32Value with zero (default, should be empty in proto3)
+value: 0

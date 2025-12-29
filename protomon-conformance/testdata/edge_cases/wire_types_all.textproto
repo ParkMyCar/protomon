@@ -1,0 +1,26 @@
+# Varint (wire type 0)
+varint_int32: 42
+varint_int64: 9876543210
+varint_uint32: 12345
+varint_uint64: 18446744073709551615
+varint_sint32: -100
+varint_sint64: -9876543210
+varint_bool: true
+
+# 64-bit fixed (wire type 1)
+i64_fixed64: 0xDEADBEEFCAFEBABE
+i64_sfixed64: -9876543210
+i64_double: 3.141592653589793
+
+# Length-delimited (wire type 2)
+len_string: "hello world"
+len_bytes: "\x00\x01\x02\x03"
+len_message {
+  value: 42
+}
+len_packed: [1, 2, 3, 4, 5]
+
+# 32-bit fixed (wire type 5)
+i32_fixed32: 0xDEADBEEF
+i32_sfixed32: -12345
+i32_float: 3.14159

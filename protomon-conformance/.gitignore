@@ -1,0 +1,11 @@
+# Bazel
+/bazel-*
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# macOS
+.DS_Store

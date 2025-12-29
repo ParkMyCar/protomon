@@ -495,6 +495,56 @@ impl<T: ProtoType + ProtoEncode> ProtoRepeated for Vec<T> {
     }
 }
 
+/// Decode a repeated field element, handling both packed and unpacked encodings.
+///
+/// This function should be called instead of `ProtoDecode::decode_into` for
+/// repeated `Vec<T>` fields, as it handles the case where the encoder used
+/// packed encoding (wire type LEN) for scalar types.
+///
+/// # Packed vs Unpacked
+///
+/// - **Unpacked**: Each element has its own `<tag><value>` pair in the wire format.
+///   The wire type matches the element type.
+/// - **Packed**: All elements are concatenated into a single `<tag><length><values...>`.
+///   The wire type is LEN, regardless of element type.
+///
+/// This function detects packed encoding by checking if the wire type is LEN
+/// when the element's wire type is not LEN (i.e., a scalar type).
+#[inline]
+pub fn decode_repeated_into<T, B>(
+    wire_type: WireType,
+    buf: &mut B,
+    dst: &mut Vec<T>,
+    _offset: usize,
+) -> Result<(), DecodeErrorKind>
+where
+    T: ProtoType + ProtoDecode + Default,
+    B: bytes::Buf,
+{
+    // Check for packed encoding: wire type is LEN but element type is not LEN
+    if wire_type == WireType::Len && T::WIRE_TYPE != WireType::Len {
+        // Packed encoding - decode length, then decode all values
+        let len = wire::decode_len(buf)?;
+        if buf.remaining() < len {
+            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+        }
+        // Read the packed data into a slice and decode values
+        let data = buf.copy_to_bytes(len);
+        let mut slice = &data[..];
+        while !slice.is_empty() {
+            let mut value = T::default();
+            T::decode_into(&mut slice, &mut value, 0)?;
+            dst.push(value);
+        }
+    } else {
+        // Regular (unpacked) encoding - decode single value
+        let mut value = T::default();
+        T::decode_into(buf, &mut value, 0)?;
+        dst.push(value);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::string::{String, ToString};

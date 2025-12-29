@@ -1,0 +1,10 @@
+id: 1
+label: "root"
+children {
+  id: 2
+  label: "child1"
+}
+children {
+  id: 3
+  label: "child2"
+}

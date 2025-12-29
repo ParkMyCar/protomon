@@ -1,0 +1,4 @@
+values: "hello"
+values: ""
+values: "\000\001\002"
+values: "world"

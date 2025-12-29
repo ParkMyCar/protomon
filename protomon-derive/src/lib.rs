@@ -415,6 +415,19 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
             Some(quote! {
                 #tag => protomon::codec::ProtoMap::decode_entry(&mut dst.#fname, &mut buf)?,
             })
+        } else if f.repeated {
+            // For Vec<T> repeated fields, use decode_repeated_into which handles packed encoding
+            // Extract the inner type T from Vec<T>
+            if let Some(inner_ty) = extract_vec_inner_type(fty) {
+                Some(quote! {
+                    #tag => protomon::codec::decode_repeated_into::<#inner_ty, _>(wire_type, &mut buf, &mut dst.#fname, value_offset)?,
+                })
+            } else {
+                // For Repeated<T> or other types, use the standard decode_into
+                Some(quote! {
+                    #tag => <#fty as protomon::codec::ProtoDecode>::decode_into(&mut buf, &mut dst.#fname, value_offset)?,
+                })
+            }
         } else {
             Some(quote! {
                 #tag => <#fty as protomon::codec::ProtoDecode>::decode_into(&mut buf, &mut dst.#fname, value_offset)?,
@@ -616,6 +629,23 @@ fn extract_option_inner_type(ty: &Type) -> Option<&Type> {
     if let Type::Path(type_path) = ty {
         if let Some(segment) = type_path.path.segments.last() {
             if segment.ident == "Option" {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                        return Some(inner);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Extract the inner type from a Vec<T> type.
+/// Returns None if the type is not a Vec (e.g., it's Repeated<T>).
+fn extract_vec_inner_type(ty: &Type) -> Option<&Type> {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            if segment.ident == "Vec" {
                 if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
                     if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
                         return Some(inner);

@@ -1,0 +1,14 @@
+id: 1
+label: "root"
+children {
+  id: 2
+  label: "level1"
+  children {
+    id: 3
+    label: "level2"
+    children {
+      id: 4
+      label: "level3"
+    }
+  }
+}

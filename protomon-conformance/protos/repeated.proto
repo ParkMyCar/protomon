@@ -1,0 +1,41 @@
+// Conformance tests for repeated fields.
+syntax = "proto3";
+
+package conformance;
+
+// Repeated scalar types (packed by default in proto3).
+message RepeatedScalars {
+  repeated int32 val_int32 = 1;
+  repeated int64 val_int64 = 2;
+  repeated uint32 val_uint32 = 3;
+  repeated uint64 val_uint64 = 4;
+  repeated sint32 val_sint32 = 5;
+  repeated sint64 val_sint64 = 6;
+  repeated bool val_bool = 7;
+  repeated fixed32 val_fixed32 = 8;
+  repeated sfixed32 val_sfixed32 = 9;
+  repeated fixed64 val_fixed64 = 10;
+  repeated sfixed64 val_sfixed64 = 11;
+  repeated float val_float = 12;
+  repeated double val_double = 13;
+  // Note: string and bytes are length-delimited, not packed
+  repeated string val_string = 14;
+  repeated bytes val_bytes = 15;
+}
+
+// Individual repeated messages for isolated testing.
+message RepeatedInt32 { repeated int32 values = 1; }
+message RepeatedInt64 { repeated int64 values = 1; }
+message RepeatedUint32 { repeated uint32 values = 1; }
+message RepeatedUint64 { repeated uint64 values = 1; }
+message RepeatedSint32 { repeated sint32 values = 1; }
+message RepeatedSint64 { repeated sint64 values = 1; }
+message RepeatedBool { repeated bool values = 1; }
+message RepeatedFixed32 { repeated fixed32 values = 1; }
+message RepeatedSfixed32 { repeated sfixed32 values = 1; }
+message RepeatedFixed64 { repeated fixed64 values = 1; }
+message RepeatedSfixed64 { repeated sfixed64 values = 1; }
+message RepeatedFloat { repeated float values = 1; }
+message RepeatedDouble { repeated double values = 1; }
+message RepeatedString { repeated string values = 1; }
+message RepeatedBytes { repeated bytes values = 1; }

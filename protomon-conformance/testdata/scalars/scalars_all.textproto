@@ -1,0 +1,15 @@
+val_int32: 42
+val_int64: 9876543210
+val_uint32: 12345
+val_uint64: 18446744073709551615
+val_sint32: -100
+val_sint64: -9876543210
+val_bool: true
+val_fixed32: 0xDEADBEEF
+val_sfixed32: -12345
+val_fixed64: 0xDEADBEEFCAFEBABE
+val_sfixed64: -9876543210
+val_float: 3.14159
+val_double: 2.718281828459045
+val_string: "Hello, Protocol Buffers!"
+val_bytes: "binary\000data"

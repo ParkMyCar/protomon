@@ -1,0 +1,21 @@
+# Nested message conformance tests
+# Format: test_name message_type
+
+# Simple nesting
+nested_empty Outer
+nested_simple Outer
+nested_with_repeated Outer
+
+# Deep nesting
+deep_level0_only Level0
+deep_all_levels Level0
+
+# Node tree
+node_leaf Node
+node_with_children Node
+node_deep_tree Node
+
+# Optional nested
+optional_absent OptionalNested
+optional_present OptionalNested
+optional_empty_payload OptionalNested

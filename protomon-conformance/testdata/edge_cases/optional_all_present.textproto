@@ -1,0 +1,3 @@
+opt_int32: 42
+opt_string: "hello"
+opt_bool: true

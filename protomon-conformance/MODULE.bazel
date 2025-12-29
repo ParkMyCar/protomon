@@ -1,0 +1,13 @@
+module(
+    name = "protomon_conformance",
+    version = "0.1.0",
+)
+
+# Protocol Buffers
+bazel_dep(name = "protobuf", version = "29.3")
+
+# Abseil (required for protobuf and flags)
+bazel_dep(name = "abseil-cpp", version = "20240722.1")
+
+# rules_cc for C++ compilation
+bazel_dep(name = "rules_cc", version = "0.1.1")

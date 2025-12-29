@@ -169,6 +169,69 @@ impl<T: ProtoType> ProtoType for ProtoPacked<T> {
     const WIRE_TYPE: WireType = WireType::Len;
 }
 
+impl<T: ProtoType> ProtoDecode for ProtoPacked<T> {
+    /// Decode a packed chunk and add it to this field.
+    ///
+    /// Each occurrence of the field tag adds another chunk of packed data.
+    #[inline]
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), DecodeErrorKind> {
+        use bytes::Buf;
+        let len = crate::wire::decode_len(buf)?;
+        if buf.remaining() < len {
+            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+        }
+        let chunk = buf.copy_to_bytes(len);
+        dst.push_chunk(chunk);
+        Ok(())
+    }
+}
+
+impl<T: ProtoType + ProtoEncode + PackedDecode + 'static> super::ProtoRepeated for ProtoPacked<T> {
+    /// No initialization needed for ProtoPacked.
+    #[inline]
+    fn init_repeated(&mut self, _msg_buf: &bytes::Bytes, _tag: u32) {
+        // ProtoPacked doesn't need buffer context - it stores its own chunks
+    }
+
+    /// Encode all elements as a single packed field.
+    #[inline]
+    fn encode_repeated<B: bytes::BufMut>(&self, tag: u32, buf: &mut B) {
+        if self.is_empty() {
+            return;
+        }
+        crate::wire::encode_key(WireType::Len, tag, buf);
+        self.encode(buf);
+    }
+
+    #[inline]
+    fn encoded_repeated_len(&self, tag: u32) -> usize {
+        if self.is_empty() {
+            return 0;
+        }
+        crate::wire::encoded_key_len(tag) + self.encoded_len()
+    }
+
+    #[inline]
+    fn repeated_len(&self) -> usize {
+        // For packed fields, we don't know the count without decoding.
+        // This is mainly used for is_empty checks.
+        if self.is_empty() {
+            0
+        } else {
+            1 // Non-zero indicates not empty
+        }
+    }
+
+    #[inline]
+    fn is_repeated_empty(&self) -> bool {
+        self.is_empty()
+    }
+}
+
 impl<T: ProtoEncode> ProtoEncode for ProtoPacked<T> {
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
         let total_len = u64::cast_from(self.byte_len());
