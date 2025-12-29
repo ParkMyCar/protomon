@@ -182,7 +182,7 @@ impl<T: ProtoType> ProtoDecode for ProtoPacked<T> {
         use bytes::Buf;
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+            return Err(DecodeErrorKind::unexpected_end_of_buffer());
         }
         let chunk = buf.copy_to_bytes(len);
         dst.push_chunk(chunk);
@@ -356,6 +356,12 @@ impl_packed_fixed_8byte! {
     f64 => |ptr| f64::from_bits(read_u64_le(ptr)),
 }
 
+/// Decode packed 4-byte elements with 8x loop unrolling.
+///
+/// We unroll by 8 elements (32 bytes) per iteration to:
+/// 1. Amortize loop overhead over more elements
+/// 2. Better utilize 64-byte cache lines (half a cache line per iteration)
+/// 3. Give the CPU more opportunity for instruction-level parallelism
 #[inline]
 fn decode_packed_4byte<T: PackedElement>(
     data: &[u8],
@@ -363,29 +369,35 @@ fn decode_packed_4byte<T: PackedElement>(
 ) -> Result<(), DecodeErrorKind> {
     let len = data.len();
     if len % 4 != 0 {
-        return Err(DecodeErrorKind::InvalidPackedLength {
-            expected_multiple: 4,
-            actual: u32::truncating_cast_from(len),
-        });
+        return Err(DecodeErrorKind::invalid_packed_length(
+            4,
+            u32::truncating_cast_from(len),
+        ));
     }
 
     let count = len / 4;
     dst.reserve(count);
 
     let mut ptr = data.as_ptr();
-    let chunks = len / 16;
+    // 8x unrolling: process 32 bytes (8 elements) per iteration
+    let unrolled_chunks = len / 32;
 
-    for _ in 0..chunks {
+    for _ in 0..unrolled_chunks {
         unsafe {
             dst.push(T::read_le(ptr));
             dst.push(T::read_le(ptr.add(4)));
             dst.push(T::read_le(ptr.add(8)));
             dst.push(T::read_le(ptr.add(12)));
-            ptr = ptr.add(16);
+            dst.push(T::read_le(ptr.add(16)));
+            dst.push(T::read_le(ptr.add(20)));
+            dst.push(T::read_le(ptr.add(24)));
+            dst.push(T::read_le(ptr.add(28)));
+            ptr = ptr.add(32);
         }
     }
 
-    for _ in 0..(count - chunks * 4) {
+    // Handle remaining elements (0-7)
+    for _ in 0..(count - unrolled_chunks * 8) {
         unsafe {
             dst.push(T::read_le(ptr));
             ptr = ptr.add(4);
@@ -395,6 +407,12 @@ fn decode_packed_4byte<T: PackedElement>(
     Ok(())
 }
 
+/// Decode packed 8-byte elements with 4x loop unrolling.
+///
+/// We unroll by 4 elements (32 bytes) per iteration to:
+/// 1. Amortize loop overhead over more elements
+/// 2. Better utilize 64-byte cache lines (half a cache line per iteration)
+/// 3. Give the CPU more opportunity for instruction-level parallelism
 #[inline]
 fn decode_packed_8byte<T: PackedElement>(
     data: &[u8],
@@ -402,29 +420,34 @@ fn decode_packed_8byte<T: PackedElement>(
 ) -> Result<(), DecodeErrorKind> {
     let len = data.len();
     if len % 8 != 0 {
-        return Err(DecodeErrorKind::InvalidPackedLength {
-            expected_multiple: 8,
-            actual: u32::truncating_cast_from(len),
-        });
+        return Err(DecodeErrorKind::invalid_packed_length(
+            8,
+            u32::truncating_cast_from(len),
+        ));
     }
 
     let count = len / 8;
     dst.reserve(count);
 
     let mut ptr = data.as_ptr();
-    let chunks = len / 16;
+    // 4x unrolling: process 32 bytes (4 elements) per iteration
+    let unrolled_chunks = len / 32;
 
-    for _ in 0..chunks {
+    for _ in 0..unrolled_chunks {
         unsafe {
             dst.push(T::read_le(ptr));
             dst.push(T::read_le(ptr.add(8)));
-            ptr = ptr.add(16);
+            dst.push(T::read_le(ptr.add(16)));
+            dst.push(T::read_le(ptr.add(24)));
+            ptr = ptr.add(32);
         }
     }
 
-    if count > chunks * 2 {
+    // Handle remaining elements (0-3)
+    for _ in 0..(count - unrolled_chunks * 4) {
         unsafe {
             dst.push(T::read_le(ptr));
+            ptr = ptr.add(8);
         }
     }
 

@@ -61,14 +61,14 @@ pub trait LebCodec: Sized {
         let mut buffer = [0u8; 16];
         for i in 0..Self::MAX_LEB_BYTES as usize {
             if !buf.has_remaining() {
-                return Err(DecodeErrorKind::InvalidVarInt);
+                return Err(DecodeErrorKind::invalid_varint());
             }
             buffer[i] = buf.get_u8();
             if buffer[i] < 0x80 {
                 return unsafe { Self::decode_leb128(&buffer[..]) };
             }
         }
-        Err(DecodeErrorKind::InvalidVarInt)
+        Err(DecodeErrorKind::invalid_varint())
     }
 
     /// Encode `self` as a LEB128 variable length integer into the provided
@@ -165,7 +165,7 @@ impl LebCodec for u64 {
 
         // Uh oh! We've read 10 bytes and either didn't find the final byte or
         // we overflowed u64::MAX.
-        Err(DecodeErrorKind::InvalidVarInt)
+        Err(DecodeErrorKind::invalid_varint())
     }
 
     #[inline]
@@ -261,39 +261,42 @@ impl LebCodec for u64 {
         10
     }
 
+    /// Compute the LEB128 encoded length using leading_zeros.
+    ///
+    /// LEB128 encodes 7 bits per byte. The number of bytes needed is
+    /// ceil(significant_bits / 7), with a minimum of 1 byte for value 0.
+    ///
+    /// For u64: significant_bits = 64 - leading_zeros
+    /// bytes = ceil((64 - lz) / 7) = (64 - lz + 6) / 7 = (70 - lz) / 7
+    ///
+    /// The lookup table approach is faster than division because:
+    /// 1. leading_zeros() compiles to a single LZCNT instruction (~1-3 cycles)
+    /// 2. Table lookup is a single memory access (likely in L1 cache)
+    /// 3. No division or branching required
     #[inline]
     fn encoded_leb128_len(self) -> usize {
-        const BYTE_1_END: u64 = !(u64::MAX << 7);
-        const BYTE_2_STR: u64 = BYTE_1_END + 1;
-        const BYTE_2_END: u64 = !(u64::MAX << 14);
-        const BYTE_3_STR: u64 = BYTE_2_END + 1;
-        const BYTE_3_END: u64 = !(u64::MAX << 21);
-        const BYTE_4_STR: u64 = BYTE_3_END + 1;
-        const BYTE_4_END: u64 = !(u64::MAX << 28);
-        const BYTE_5_STR: u64 = BYTE_4_END + 1;
-        const BYTE_5_END: u64 = !(u64::MAX << 35);
-        const BYTE_6_STR: u64 = BYTE_5_END + 1;
-        const BYTE_6_END: u64 = !(u64::MAX << 42);
-        const BYTE_7_STR: u64 = BYTE_6_END + 1;
-        const BYTE_7_END: u64 = !(u64::MAX << 49);
-        const BYTE_8_STR: u64 = BYTE_7_END + 1;
-        const BYTE_8_END: u64 = !(u64::MAX << 56);
-        const BYTE_9_STR: u64 = BYTE_8_END + 1;
-        const BYTE_9_END: u64 = !(u64::MAX << 63);
-        const BYTE_10_STR: u64 = BYTE_9_END + 1;
+        // Lookup table mapping leading_zeros (0-64) to LEB128 byte count.
+        // Index 64 (value 0) maps to 1 byte.
+        // Index 0 (all 64 bits used) maps to 10 bytes.
+        //
+        // For each lz value, significant_bits = 64 - lz
+        // bytes = ceil(significant_bits / 7), minimum 1
+        #[rustfmt::skip]
+        const LZ_TO_LEN: [u8; 65] = [
+            10,                                         // 0:     64 bits -> 10 bytes
+            9, 9, 9, 9, 9, 9, 9,                        // 1-7:   63-57 bits -> 9 bytes
+            8, 8, 8, 8, 8, 8, 8,                        // 8-14:  56-50 bits -> 8 bytes
+            7, 7, 7, 7, 7, 7, 7,                        // 15-21: 49-43 bits -> 7 bytes
+            6, 6, 6, 6, 6, 6, 6,                        // 22-28: 42-36 bits -> 6 bytes
+            5, 5, 5, 5, 5, 5, 5,                        // 29-35: 35-29 bits -> 5 bytes
+            4, 4, 4, 4, 4, 4, 4,                        // 36-42: 28-22 bits -> 4 bytes
+            3, 3, 3, 3, 3, 3, 3,                        // 43-49: 21-15 bits -> 3 bytes
+            2, 2, 2, 2, 2, 2, 2,                        // 50-56: 14-8 bits  -> 2 bytes
+            1, 1, 1, 1, 1, 1, 1, 1,                     // 57-64: 7-0 bits   -> 1 byte
+        ];
 
-        match self {
-            u64::MIN..=BYTE_1_END => 1,
-            BYTE_2_STR..=BYTE_2_END => 2,
-            BYTE_3_STR..=BYTE_3_END => 3,
-            BYTE_4_STR..=BYTE_4_END => 4,
-            BYTE_5_STR..=BYTE_5_END => 5,
-            BYTE_6_STR..=BYTE_6_END => 6,
-            BYTE_7_STR..=BYTE_7_END => 7,
-            BYTE_8_STR..=BYTE_8_END => 8,
-            BYTE_9_STR..=BYTE_9_END => 9,
-            BYTE_10_STR..=u64::MAX => 10,
-        }
+        // SAFETY: leading_zeros() returns 0-64 for u64, which is in bounds.
+        LZ_TO_LEN[self.leading_zeros() as usize] as usize
     }
 }
 
@@ -343,7 +346,7 @@ impl LebCodec for u32 {
 
         // Uh oh! We've read 5 bytes and either didn't find the final byte or
         // we overflowed u32::MAX.
-        Err(DecodeErrorKind::InvalidVarInt)
+        Err(DecodeErrorKind::invalid_varint())
     }
 
     #[inline]
@@ -394,24 +397,24 @@ impl LebCodec for u32 {
         5
     }
 
+    /// Compute the LEB128 encoded length using leading_zeros.
+    ///
+    /// For u32: significant_bits = 32 - leading_zeros
+    /// bytes = ceil((32 - lz) / 7) = (32 - lz + 6) / 7 = (38 - lz) / 7
     #[inline]
     fn encoded_leb128_len(self) -> usize {
-        const BYTE_1_END: u32 = !(u32::MAX << 7);
-        const BYTE_2_STR: u32 = BYTE_1_END + 1;
-        const BYTE_2_END: u32 = !(u32::MAX << 14);
-        const BYTE_3_STR: u32 = BYTE_2_END + 1;
-        const BYTE_3_END: u32 = !(u32::MAX << 21);
-        const BYTE_4_STR: u32 = BYTE_3_END + 1;
-        const BYTE_4_END: u32 = !(u32::MAX << 28);
-        const BYTE_5_STR: u32 = BYTE_4_END + 1;
+        // Lookup table mapping leading_zeros (0-32) to LEB128 byte count.
+        #[rustfmt::skip]
+        const LZ_TO_LEN: [u8; 33] = [
+            5, 5, 5, 5,                         // 0-3:   32-29 bits -> 5 bytes
+            4, 4, 4, 4, 4, 4, 4,                // 4-10:  28-22 bits -> 4 bytes
+            3, 3, 3, 3, 3, 3, 3,                // 11-17: 21-15 bits -> 3 bytes
+            2, 2, 2, 2, 2, 2, 2,                // 18-24: 14-8 bits  -> 2 bytes
+            1, 1, 1, 1, 1, 1, 1, 1,             // 25-32: 7-0 bits   -> 1 byte
+        ];
 
-        match self {
-            u32::MIN..=BYTE_1_END => 1,
-            BYTE_2_STR..=BYTE_2_END => 2,
-            BYTE_3_STR..=BYTE_3_END => 3,
-            BYTE_4_STR..=BYTE_4_END => 4,
-            BYTE_5_STR..=u32::MAX => 5,
-        }
+        // SAFETY: leading_zeros() returns 0-32 for u32, which is in bounds.
+        LZ_TO_LEN[self.leading_zeros() as usize] as usize
     }
 }
 

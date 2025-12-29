@@ -101,7 +101,7 @@ where
     // Read the entry length
     let entry_len = wire::decode_len(buf)?;
     if buf.remaining() < entry_len {
-        return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+        return Err(DecodeErrorKind::unexpected_end_of_buffer());
     }
 
     // Create a sub-buffer for the entry
@@ -120,18 +120,14 @@ where
             1 => {
                 // Validate wire type matches key type
                 if wire_type != K::WIRE_TYPE {
-                    return Err(DecodeErrorKind::InvalidWireType {
-                        value: wire_type.into_val(),
-                    });
+                    return Err(DecodeErrorKind::invalid_wire_type(wire_type.into_val()));
                 }
                 K::decode_into(&mut entry_buf, &mut key, value_offset)?;
             }
             2 => {
                 // Validate wire type matches value type
                 if wire_type != V::WIRE_TYPE {
-                    return Err(DecodeErrorKind::InvalidWireType {
-                        value: wire_type.into_val(),
-                    });
+                    return Err(DecodeErrorKind::invalid_wire_type(wire_type.into_val()));
                 }
                 V::decode_into(&mut entry_buf, &mut value, value_offset)?;
             }

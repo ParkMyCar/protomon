@@ -1,6 +1,6 @@
 //! Wire format for Google's Protocol Buffers, aka [protobuf](https://protobuf.dev).
 
-use crate::error::DecodeErrorKind;
+use crate::error::{DecodeError, DecodeErrorKind};
 use crate::leb128::LebCodec;
 use crate::util::CastFrom;
 use crate::util::{likely, unlikely};
@@ -14,14 +14,18 @@ pub const MAXIMUM_TAG_VAL: u64 = (1 << 29) - 1;
 ///
 /// Follows the specification from <https://protobuf.dev/programming-guides/encoding>
 /// under the "Message Structure" section.
-#[inline]
+///
+/// Hot path for encoding - called for every field in every message.
+#[inline(always)]
 pub fn encode_key<B: bytes::BufMut>(wire_type: WireType, tag: u32, buf: &mut B) {
     let key = (tag << 3) | u32::cast_from(wire_type.into_val());
     u32::encode_leb128(key, buf);
 }
 
 /// Returns the encoded length of a field key (tag + wire type).
-#[inline]
+///
+/// Called frequently during encoded_len() calculations.
+#[inline(always)]
 pub fn encoded_key_len(tag: u32) -> usize {
     // Wire type is 3 bits, so key = (tag << 3) | wire_type
     // The wire type doesn't affect the length since it only uses 3 bits
@@ -33,7 +37,11 @@ pub fn encoded_key_len(tag: u32) -> usize {
 ///
 /// Follows the specification from <https://protobuf.dev/programming-guides/encoding>
 /// under the "Message Structure" section.
-#[inline]
+///
+/// This is one of the hottest functions in the decode path - it's called
+/// for every field in every message. We use `#[inline(always)]` to ensure
+/// the compiler inlines this at every call site for maximum performance.
+#[inline(always)]
 pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeErrorKind> {
     let chunk = buf.chunk();
     let chunk_len = chunk.len();
@@ -42,9 +50,7 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
     //
     // Note: We hint to the compiler the likely paths for better optimization.
     let value = if unlikely(chunk_len == 0) {
-        return Err(DecodeErrorKind::InvalidKey {
-            reason: "empty buffer",
-        });
+        return Err(DecodeError::invalid_key("empty buffer"));
     } else if likely(chunk[0] < 0x80 || chunk_len > 10) {
         let (value, bytes_read) = unsafe { u64::decode_leb128(chunk)? };
         buf.advance(bytes_read);
@@ -63,9 +69,7 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
 
     // Validate tag is in valid range (1 to 2^29-1)
     if unlikely(tag == 0 || tag > MAXIMUM_TAG_VAL) {
-        return Err(DecodeErrorKind::InvalidKey {
-            reason: "tag out of range",
-        });
+        return Err(DecodeError::invalid_key("tag out of range"));
     }
     // Just checked the bounds of 'tag' above.
     #[allow(clippy::as_conversions)]
@@ -85,7 +89,7 @@ pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeErrorKind> 
         Ok(len)
     } else {
         let (len, _) = u64::decode_leb128_buf(buf)?;
-        usize::try_from(len).map_err(|_| DecodeErrorKind::LengthOverflow { value: len })
+        usize::try_from(len).map_err(|_| DecodeErrorKind::length_overflow(len))
     }
 }
 
@@ -93,7 +97,10 @@ pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeErrorKind> 
 ///
 /// Protobuf supports backwards and fowards compatiblity by skipping fields
 /// we don't know about. We "skip" a field by advancing our buffer past it.
-#[inline]
+///
+/// This is on the hot path for message decoding - called for unknown fields
+/// and during lazy repeated field iteration.
+#[inline(always)]
 pub fn skip_field<B: bytes::Buf>(wire_type: WireType, buf: &mut B) -> Result<(), DecodeErrorKind> {
     let skip_len = match wire_type {
         WireType::Varint => {
@@ -105,12 +112,12 @@ pub fn skip_field<B: bytes::Buf>(wire_type: WireType, buf: &mut B) -> Result<(),
         WireType::Len => decode_len(buf)?,
         WireType::I32 => 4,
         WireType::SGroup | WireType::EGroup => {
-            return Err(DecodeErrorKind::DeprecatedGroupEncoding);
+            return Err(DecodeErrorKind::deprecated_group_encoding());
         }
     };
 
     if buf.remaining() < skip_len {
-        return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+        return Err(DecodeErrorKind::unexpected_end_of_buffer());
     }
     buf.advance(skip_len);
     Ok(())
@@ -170,7 +177,7 @@ impl WireType {
 
     /// Try to decode a [`WireType`] from the provided raw value.
     #[inline(always)]
-    const fn try_from_val(value: u8) -> Result<Self, DecodeErrorKind> {
+    fn try_from_val(value: u8) -> Result<Self, DecodeErrorKind> {
         if value <= Self::MAX_VAL {
             // SAFETY:
             //
@@ -179,7 +186,7 @@ impl WireType {
             let wire_type: WireType = unsafe { core::mem::transmute(value) };
             Ok(wire_type)
         } else {
-            Err(DecodeErrorKind::InvalidWireType { value })
+            Err(DecodeError::invalid_wire_type(value))
         }
     }
 

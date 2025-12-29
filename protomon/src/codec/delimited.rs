@@ -47,7 +47,7 @@ impl ProtoDecode for ProtoBytes {
     ) -> Result<(), DecodeErrorKind> {
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+            return Err(DecodeErrorKind::unexpected_end_of_buffer());
         }
         *dst = ProtoBytes(buf.copy_to_bytes(len));
         Ok(())
@@ -124,13 +124,13 @@ impl ProtoDecode for ProtoString {
     ) -> Result<(), DecodeErrorKind> {
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+            return Err(DecodeErrorKind::unexpected_end_of_buffer());
         }
         let data = buf.copy_to_bytes(len);
 
         // Validate UTF-8.
         if core::str::from_utf8(&data).is_err() {
-            return Err(DecodeErrorKind::InvalidUtf8);
+            return Err(DecodeErrorKind::invalid_utf8());
         }
         *dst = ProtoString(data);
 
@@ -169,7 +169,7 @@ impl ProtoDecode for String {
     ) -> Result<(), DecodeErrorKind> {
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+            return Err(DecodeErrorKind::unexpected_end_of_buffer());
         }
 
         // Use a guard to safely handle uninitialized memory.
@@ -206,7 +206,7 @@ impl ProtoDecode for String {
             Ok(_) => core::mem::forget(guard),
             // Invalid, the drop guard will clear the memory.
             Err(_) => {
-                return Err(DecodeErrorKind::InvalidUtf8);
+                return Err(DecodeErrorKind::invalid_utf8());
             }
         }
 
@@ -246,7 +246,7 @@ impl ProtoDecode for Vec<u8> {
     ) -> Result<(), DecodeErrorKind> {
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+            return Err(DecodeErrorKind::unexpected_end_of_buffer());
         }
 
         // Use a guard to safely handle uninitialized memory.
@@ -306,13 +306,10 @@ where
     ) -> Result<(), DecodeErrorKind> {
         let len = crate::wire::decode_len(buf)?;
         if len != N {
-            return Err(DecodeErrorKind::LengthMismatch {
-                expected: N,
-                actual: len,
-            });
+            return Err(DecodeErrorKind::length_mismatch(N, len));
         }
         if buf.remaining() < N {
-            return Err(DecodeErrorKind::UnexpectedEndOfBuffer);
+            return Err(DecodeErrorKind::unexpected_end_of_buffer());
         }
         buf.copy_to_slice(dst);
         Ok(())
@@ -335,6 +332,7 @@ impl<const N: usize> ProtoEncode for [u8; N] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::DecodeErrorInner;
     use alloc::vec;
 
     fn roundtrip<T: ProtoEncode + ProtoDecode + PartialEq + core::fmt::Debug + Default>(value: T) {
@@ -474,12 +472,13 @@ mod tests {
         // Try to decode into 3-byte array - should fail
         let mut decoded = [0u8; 3];
         let result = <[u8; 3] as ProtoDecode>::decode_into(&mut &buf[..], &mut decoded, 0);
+        let err = result.unwrap_err();
         assert!(matches!(
-            result,
-            Err(DecodeErrorKind::LengthMismatch {
+            err.kind(),
+            DecodeErrorInner::LengthMismatch {
                 expected: 3,
                 actual: 5
-            })
+            }
         ));
     }
 
