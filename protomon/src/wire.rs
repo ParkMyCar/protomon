@@ -1,6 +1,6 @@
 //! Wire format for Google's Protocol Buffers, aka [protobuf](https://protobuf.dev).
 
-use crate::error::DecodeErrorKind;
+use crate::error::{DecodeError, DecodeErrorKind};
 use crate::leb128::LebCodec;
 use crate::util::CastFrom;
 use crate::util::{likely, unlikely};
@@ -50,7 +50,7 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
     //
     // Note: We hint to the compiler the likely paths for better optimization.
     let value = if unlikely(chunk_len == 0) {
-        return Err(DecodeErrorKind::invalid_key("empty buffer"));
+        return Err(DecodeError::invalid_key("empty buffer"));
     } else if likely(chunk[0] < 0x80 || chunk_len > 10) {
         let (value, bytes_read) = unsafe { u64::decode_leb128(chunk)? };
         buf.advance(bytes_read);
@@ -69,7 +69,7 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
 
     // Validate tag is in valid range (1 to 2^29-1)
     if unlikely(tag == 0 || tag > MAXIMUM_TAG_VAL) {
-        return Err(DecodeErrorKind::invalid_key("tag out of range"));
+        return Err(DecodeError::invalid_key("tag out of range"));
     }
     // Just checked the bounds of 'tag' above.
     #[allow(clippy::as_conversions)]
@@ -177,7 +177,7 @@ impl WireType {
 
     /// Try to decode a [`WireType`] from the provided raw value.
     #[inline(always)]
-    const fn try_from_val(value: u8) -> Result<Self, DecodeErrorKind> {
+    fn try_from_val(value: u8) -> Result<Self, DecodeErrorKind> {
         if value <= Self::MAX_VAL {
             // SAFETY:
             //
@@ -186,9 +186,7 @@ impl WireType {
             let wire_type: WireType = unsafe { core::mem::transmute(value) };
             Ok(wire_type)
         } else {
-            // Note: We can't call the cold constructor here because this is const fn.
-            // The error path is still unlikely, but we rely on the const fn inlining.
-            Err(DecodeErrorKind::InvalidWireType { value })
+            Err(DecodeError::invalid_wire_type(value))
         }
     }
 

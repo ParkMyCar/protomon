@@ -155,9 +155,7 @@ mod tests {
             match tag {
                 1 => {
                     if wire_type != <i32 as ProtoType>::WIRE_TYPE {
-                        return Err(DecodeErrorKind::InvalidWireType {
-                            value: wire_type as u8,
-                        });
+                        return Err(DecodeErrorKind::invalid_wire_type(wire_type as u8));
                     }
                     let mut value = i32::default();
                     i32::decode_into(buf, &mut value, offset)?;
@@ -165,9 +163,7 @@ mod tests {
                 }
                 2 => {
                     if wire_type != <ProtoString as ProtoType>::WIRE_TYPE {
-                        return Err(DecodeErrorKind::InvalidWireType {
-                            value: wire_type as u8,
-                        });
+                        return Err(DecodeErrorKind::invalid_wire_type(wire_type as u8));
                     }
                     let mut value = ProtoString::default();
                     ProtoString::decode_into(buf, &mut value, offset)?;
@@ -175,9 +171,7 @@ mod tests {
                 }
                 3 => {
                     if wire_type != <bool as ProtoType>::WIRE_TYPE {
-                        return Err(DecodeErrorKind::InvalidWireType {
-                            value: wire_type as u8,
-                        });
+                        return Err(DecodeErrorKind::invalid_wire_type(wire_type as u8));
                     }
                     let mut value = bool::default();
                     bool::decode_into(buf, &mut value, offset)?;

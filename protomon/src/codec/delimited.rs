@@ -332,6 +332,7 @@ impl<const N: usize> ProtoEncode for [u8; N] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::DecodeErrorInner;
     use alloc::vec;
 
     fn roundtrip<T: ProtoEncode + ProtoDecode + PartialEq + core::fmt::Debug + Default>(value: T) {
@@ -471,12 +472,13 @@ mod tests {
         // Try to decode into 3-byte array - should fail
         let mut decoded = [0u8; 3];
         let result = <[u8; 3] as ProtoDecode>::decode_into(&mut &buf[..], &mut decoded, 0);
+        let err = result.unwrap_err();
         assert!(matches!(
-            result,
-            Err(DecodeErrorKind::LengthMismatch {
+            err.kind(),
+            DecodeErrorInner::LengthMismatch {
                 expected: 3,
                 actual: 5
-            })
+            }
         ));
     }
 

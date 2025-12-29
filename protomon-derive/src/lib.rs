@@ -146,7 +146,7 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
                 use bytes::Buf;
                 let len = protomon::wire::decode_len(buf)?;
                 if buf.remaining() < len {
-                    return Err(protomon::error::DecodeErrorKind::UnexpectedEndOfBuffer);
+                    return Err(protomon::error::DecodeErrorKind::unexpected_end_of_buffer());
                 }
                 <Self as protomon::codec::ProtoMessage>::decode_message_into(buf.copy_to_bytes(len), dst)?;
                 Ok(())
@@ -552,9 +552,7 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
         let field_name_str = fname.to_string();
 
         quote! {
-            dst.#fname = #temp_name.ok_or(protomon::error::DecodeErrorKind::MissingRequiredOneof {
-                field: #field_name_str,
-            })?;
+            dst.#fname = #temp_name.ok_or_else(|| protomon::error::DecodeErrorKind::missing_required_oneof(#field_name_str))?;
         }
     });
 
@@ -578,7 +576,7 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
                     protomon::wire::WireType::I64 => {
                         // Copy 8 bytes directly without intermediate Bytes allocation
                         if buf.remaining() < 8 {
-                            return Err(protomon::error::DecodeErrorKind::UnexpectedEndOfBuffer);
+                            return Err(protomon::error::DecodeErrorKind::unexpected_end_of_buffer());
                         }
                         unknown_buf.extend_from_slice(&buf.chunk()[..8]);
                         buf.advance(8);
@@ -590,7 +588,7 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
                         (len as u64).encode_leb128(&mut unknown_buf);
                         // Copy the data directly without intermediate Bytes allocation
                         if buf.remaining() < len {
-                            return Err(protomon::error::DecodeErrorKind::UnexpectedEndOfBuffer);
+                            return Err(protomon::error::DecodeErrorKind::unexpected_end_of_buffer());
                         }
                         unknown_buf.extend_from_slice(&buf.chunk()[..len]);
                         buf.advance(len);
@@ -598,13 +596,13 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
                     protomon::wire::WireType::I32 => {
                         // Copy 4 bytes directly without intermediate Bytes allocation
                         if buf.remaining() < 4 {
-                            return Err(protomon::error::DecodeErrorKind::UnexpectedEndOfBuffer);
+                            return Err(protomon::error::DecodeErrorKind::unexpected_end_of_buffer());
                         }
                         unknown_buf.extend_from_slice(&buf.chunk()[..4]);
                         buf.advance(4);
                     }
                     protomon::wire::WireType::SGroup | protomon::wire::WireType::EGroup => {
-                        return Err(protomon::error::DecodeErrorKind::DeprecatedGroupEncoding);
+                        return Err(protomon::error::DecodeErrorKind::deprecated_group_encoding());
                     }
                 }
             }
@@ -959,9 +957,7 @@ fn generate_oneof_decode(enum_name: &Ident, variants: &[OneofVariantInfo]) -> To
         quote! {
             #tag => {
                 if wire_type != <#vty as protomon::codec::ProtoType>::WIRE_TYPE {
-                    return Err(protomon::error::DecodeErrorKind::InvalidWireType {
-                        value: wire_type as u8,
-                    });
+                    return Err(protomon::error::DecodeErrorKind::invalid_wire_type(wire_type as u8));
                 }
                 let mut value = <#vty as ::core::default::Default>::default();
                 <#vty as protomon::codec::ProtoDecode>::decode_into(buf, &mut value, offset)?;

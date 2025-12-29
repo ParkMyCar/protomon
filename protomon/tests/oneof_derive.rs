@@ -5,7 +5,7 @@ use protomon::codec::{
     decode_oneof_field, encode_oneof_field, encoded_oneof_field_len, ProtoBytes, ProtoEncode,
     ProtoMessage, ProtoOneof, ProtoString,
 };
-use protomon::error::DecodeErrorKind;
+use protomon::error::DecodeErrorInner;
 use protomon::wire::{self, WireType};
 use protomon::{ProtoMessage, ProtoOneof};
 
@@ -395,11 +395,13 @@ fn test_required_oneof_missing_fails() {
     // Decode should fail with MissingRequiredOneof
     let result = MessageWithRequiredOneof::decode_message(Bytes::from(buf));
     match result {
-        Err(DecodeErrorKind::MissingRequiredOneof { field }) => {
-            assert_eq!(field, "widget");
-        }
+        Err(e) => match e.kind() {
+            DecodeErrorInner::MissingRequiredOneof { field } => {
+                assert_eq!(*field, "widget");
+            }
+            _ => panic!("expected MissingRequiredOneof error, got: {:?}", e),
+        },
         Ok(_) => panic!("expected decode to fail for missing required oneof"),
-        Err(e) => panic!("expected MissingRequiredOneof error, got: {:?}", e),
     }
 }
 
