@@ -45,7 +45,7 @@ pub fn main() {
     let start = std::time::Instant::now();
     for _ in 0..NUM_ITERATIONS {
         for (data, _len) in &values {
-            let value = unsafe { u64::decode_leb128(data) };
+            let value = unsafe { u64::decode_leb128(data.as_ptr()) };
             let _ = std::hint::black_box(value);
         }
     }

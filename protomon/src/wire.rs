@@ -52,8 +52,9 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
     let value = if unlikely(chunk_len == 0) {
         return Err(DecodeError::invalid_key("empty buffer"));
     } else if likely(chunk[0] < 0x80 || chunk_len > 10) {
-        let (value, bytes_read) = unsafe { u64::decode_leb128(chunk)? };
-        buf.advance(bytes_read);
+        let (value, bytes_read) = unsafe { u64::decode_leb128(chunk.as_ptr()) }
+            .ok_or_else(DecodeErrorKind::invalid_varint)?;
+        buf.advance(usize::cast_from(bytes_read.get()));
         value
     } else {
         u64::decode_leb128_buf(buf)?.0

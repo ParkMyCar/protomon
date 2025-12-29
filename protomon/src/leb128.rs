@@ -3,6 +3,8 @@
 // This module uses `as` casts which have been thoroughly reviewed for correctness.
 #![allow(clippy::as_conversions)]
 
+use core::num::NonZeroU8;
+
 use crate::error::DecodeErrorKind;
 
 /// Types that can be decoded from a LEB128 encoded integer.
@@ -11,32 +13,31 @@ pub trait LebCodec: Sized {
 
     /// Decode a LEB128 variable length integer from the provided pointer.
     ///
-    /// Returns a tuple of the decoded value and the number of bytes read to
-    /// decode said value.
+    /// Returns `Some((value, bytes_read))` on success, `None` on invalid varint.
     ///
-    /// # Validating Result
+    /// # Performance
     ///
-    /// The user must check that the number of bytes used to decode the value
-    /// is less than or equal to [`LebCodec::MAX_LEB_BYTES`]. See
-    /// [`LebCodec::try_decode_leb128_safe`] for a version of this
-    /// function that includes error handling.
+    /// This method signature is very carefully written to ensure arguments and return
+    /// values are passed entirely in registers instead of on the stack.
+    /// * Takes a raw pointer as an argument instead of a slice so we use one register
+    ///   for arguments instead of two, i.e. a slice is a pointer + length.
+    /// * Uses `Option` instead of `Result` for the return type because a
+    ///   `Result<(Value, Length), Error>` gets passed on the stack, even when the total
+    ///   size is <= 2 words.
     ///
     /// # Safety
     ///
     /// * __ValidRead__: The caller must ensure that `data` is valid for
-    ///   `Self::MAX_LEB_BYTES` bytes to be read from the slice or that the last
-    ///   byte is < `0x80` which signifies the end of
+    ///   `Self::MAX_LEB_BYTES` bytes to be read, or that a byte < `0x80`
+    ///   (signifying end of varint) appears before that limit.
     ///
-    /// See [`LebCodec::decode_leb128_safe`] for a version of this function
-    /// that ensures the above safety variant.
-    ///
-    unsafe fn decode_leb128(data: &[u8]) -> Result<(Self, usize), DecodeErrorKind>;
+    unsafe fn decode_leb128(data: *const u8) -> Option<(Self, NonZeroU8)>;
 
-    /// Decode a LEB128 variable.
-    fn decode_leb128_safe(data: &[u8]) -> Result<(Self, usize), DecodeErrorKind> {
+    /// Decode a LEB128 variable with bounds checking.
+    fn decode_leb128_safe(data: &[u8]) -> Option<(Self, NonZeroU8)> {
         // Fast path: if the input is long enough, we can decode directly.
         if data.len() >= Self::MAX_LEB_BYTES as usize {
-            return unsafe { Self::decode_leb128(data) };
+            return unsafe { Self::decode_leb128(data.as_ptr()) };
         }
 
         // Slow path: copy to a buffer that we know is safe to read from.
@@ -44,16 +45,18 @@ pub trait LebCodec: Sized {
         let len = data.len().min(16);
         buffer[..len].copy_from_slice(&data[..len]);
 
-        unsafe { Self::decode_leb128(&buffer[..]) }
+        unsafe { Self::decode_leb128(buffer.as_ptr()) }
     }
 
-    fn decode_leb128_buf<B: bytes::Buf>(buf: &mut B) -> Result<(Self, usize), DecodeErrorKind> {
+    /// Decode a LEB128 variable from a `Buf`, returning `Result` for error context.
+    fn decode_leb128_buf<B: bytes::Buf>(buf: &mut B) -> Result<(Self, NonZeroU8), DecodeErrorKind> {
         let chunk = buf.chunk();
 
         // Fast path: current chunk has enough bytes for direct decode.
         if chunk.len() >= Self::MAX_LEB_BYTES as usize {
-            let (value, bytes_read) = unsafe { Self::decode_leb128(chunk)? };
-            buf.advance(bytes_read);
+            let (value, bytes_read) = unsafe { Self::decode_leb128(chunk.as_ptr()) }
+                .ok_or_else(DecodeErrorKind::invalid_varint)?;
+            buf.advance(bytes_read.get() as usize);
             return Ok((value, bytes_read));
         }
 
@@ -65,7 +68,8 @@ pub trait LebCodec: Sized {
             }
             buffer[i] = buf.get_u8();
             if buffer[i] < 0x80 {
-                return unsafe { Self::decode_leb128(&buffer[..]) };
+                return unsafe { Self::decode_leb128(buffer.as_ptr()) }
+                    .ok_or_else(DecodeErrorKind::invalid_varint);
             }
         }
         Err(DecodeErrorKind::invalid_varint())
@@ -82,90 +86,92 @@ pub trait LebCodec: Sized {
 impl LebCodec for u64 {
     const MAX_LEB_BYTES: u32 = 10;
 
-    #[inline(always)]
-    unsafe fn decode_leb128(data: &[u8]) -> Result<(Self, usize), DecodeErrorKind> {
+    #[inline]
+    unsafe fn decode_leb128(data: *const u8) -> Option<(Self, NonZeroU8)> {
+        // SAFETY: All NonZeroU8::new_unchecked calls are safe because 1-10 are all non-zero.
+
         // Byte 1.
-        let mut b: u8 = unsafe { *data.get_unchecked(0) };
+        let mut b: u8 = unsafe { *data };
         let mut value = b as u64;
         if b < 0x80 {
-            return Ok((value, 1));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(1) }));
         };
         value -= 0x80;
 
         // Byte 2.
-        b = unsafe { *data.get_unchecked(1) };
+        b = unsafe { *data.add(1) };
         value += (b as u64) << 7;
         if b < 0x80 {
-            return Ok((value, 2));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(2) }));
         };
         value -= 0x80 << 7;
 
         // Byte 3.
-        b = unsafe { *data.get_unchecked(2) };
+        b = unsafe { *data.add(2) };
         value += (b as u64) << 14;
         if b < 0x80 {
-            return Ok((value, 3));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(3) }));
         };
         value -= 0x80 << 14;
 
         // Byte 4.
-        b = unsafe { *data.get_unchecked(3) };
+        b = unsafe { *data.add(3) };
         value += (b as u64) << 21;
         if b < 0x80 {
-            return Ok((value, 4));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(4) }));
         };
         value -= 0x80 << 21;
 
         // Byte 5.
-        b = unsafe { *data.get_unchecked(4) };
+        b = unsafe { *data.add(4) };
         value += (b as u64) << 28;
         if b < 0x80 {
-            return Ok((value, 5));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(5) }));
         };
         value -= 0x80 << 28;
 
         // Byte 6.
-        b = unsafe { *data.get_unchecked(5) };
+        b = unsafe { *data.add(5) };
         value += (b as u64) << 35;
         if b < 0x80 {
-            return Ok((value, 6));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(6) }));
         };
         value -= 0x80 << 35;
 
         // Byte 7.
-        b = unsafe { *data.get_unchecked(6) };
+        b = unsafe { *data.add(6) };
         value += (b as u64) << 42;
         if b < 0x80 {
-            return Ok((value, 7));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(7) }));
         };
         value -= 0x80 << 42;
 
         // Byte 8.
-        b = unsafe { *data.get_unchecked(7) };
+        b = unsafe { *data.add(7) };
         value += (b as u64) << 49;
         if b < 0x80 {
-            return Ok((value, 8));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(8) }));
         };
         value -= 0x80 << 49;
 
         // Byte 9.
-        b = unsafe { *data.get_unchecked(8) };
+        b = unsafe { *data.add(8) };
         value += (b as u64) << 56;
         if b < 0x80 {
-            return Ok((value, 9));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(9) }));
         };
         value -= 0x80 << 56;
 
         // Byte 10.
-        b = unsafe { *data.get_unchecked(9) };
+        b = unsafe { *data.add(9) };
         value += (b as u64) << 63;
         if b < 0x02 {
-            return Ok((value, 10));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(10) }));
         };
 
         // Uh oh! We've read 10 bytes and either didn't find the final byte or
         // we overflowed u64::MAX.
-        Err(DecodeErrorKind::invalid_varint())
+        None
     }
 
     #[inline]
@@ -305,49 +311,51 @@ impl LebCodec for u32 {
     const MAX_LEB_BYTES: u32 = 5;
 
     #[inline]
-    unsafe fn decode_leb128(data: &[u8]) -> Result<(Self, usize), DecodeErrorKind> {
+    unsafe fn decode_leb128(data: *const u8) -> Option<(Self, NonZeroU8)> {
+        // SAFETY: All NonZeroU8::new_unchecked calls are safe because 1-5 are all non-zero.
+
         // Byte 1.
-        let mut b: u8 = unsafe { *data.get_unchecked(0) };
+        let mut b: u8 = unsafe { *data };
         let mut value = b as u32;
         if b < 0x80 {
-            return Ok((value, 1));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(1) }));
         };
         value -= 0x80;
 
         // Byte 2.
-        b = unsafe { *data.get_unchecked(1) };
+        b = unsafe { *data.add(1) };
         value += (b as u32) << 7;
         if b < 0x80 {
-            return Ok((value, 2));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(2) }));
         };
         value -= 0x80 << 7;
 
         // Byte 3.
-        b = unsafe { *data.get_unchecked(2) };
+        b = unsafe { *data.add(2) };
         value += (b as u32) << 14;
         if b < 0x80 {
-            return Ok((value, 3));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(3) }));
         };
         value -= 0x80 << 14;
 
         // Byte 4.
-        b = unsafe { *data.get_unchecked(3) };
+        b = unsafe { *data.add(3) };
         value += (b as u32) << 21;
         if b < 0x80 {
-            return Ok((value, 4));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(4) }));
         };
         value -= 0x80 << 21;
 
         // Byte 5.
-        b = unsafe { *data.get_unchecked(4) };
+        b = unsafe { *data.add(4) };
         value += (b as u32) << 28;
         if b < 0x20 {
-            return Ok((value, 5));
+            return Some((value, unsafe { NonZeroU8::new_unchecked(5) }));
         };
 
         // Uh oh! We've read 5 bytes and either didn't find the final byte or
         // we overflowed u32::MAX.
-        Err(DecodeErrorKind::invalid_varint())
+        None
     }
 
     #[inline]
@@ -552,10 +560,10 @@ mod tests {
             let encode_len = u64::encode_leb128(val, &mut buffer.as_mut_slice());
 
             // SAFETY - ValidRead: We created a buffer of 16 bytes.
-            let (rnd, rnd_len) = unsafe { u64::decode_leb128(&buffer[..]).unwrap() };
+            let (rnd, rnd_len) = unsafe { u64::decode_leb128(buffer.as_ptr()).unwrap() };
 
             assert_eq!(rnd, val, "invalid value");
-            assert_eq!(len, rnd_len, "invalid length");
+            assert_eq!(len, rnd_len.get() as usize, "invalid length");
             assert_eq!(len, encode_len, "invalid encode length");
         }
 
@@ -575,11 +583,11 @@ mod tests {
             let mut buffer: [u8; 8] = [0u8; 8];
             let encode_len = u32::encode_leb128(val, &mut buffer.as_mut_slice());
 
-            // SAFETY - ValidRead: We created a buffer of 16 bytes.
-            let (rnd, rnd_len) = unsafe { u32::decode_leb128(&buffer[..]).unwrap() };
+            // SAFETY - ValidRead: We created a buffer of 8 bytes.
+            let (rnd, rnd_len) = unsafe { u32::decode_leb128(buffer.as_ptr()).unwrap() };
 
             assert_eq!(rnd, val, "invalid value");
-            assert_eq!(len, rnd_len, "invalid length");
+            assert_eq!(len, rnd_len.get() as usize, "invalid length");
             assert_eq!(len, encode_len, "invalid encode length");
         }
 
@@ -596,12 +604,12 @@ mod tests {
         let og_len = u64::encode_leb128(val, &mut buffer.as_mut_slice());
 
         // SAFETY - ValidRead: We created a buffer of 16 bytes.
-        let (rnd, len) = unsafe { u64::decode_leb128(&buffer[..]).unwrap() };
+        let (rnd, len) = unsafe { u64::decode_leb128(buffer.as_ptr()).unwrap() };
         prop_assert_eq!(rnd, val, "invalid value");
-        prop_assert_eq!(len, og_len, "invalid length");
+        prop_assert_eq!(len.get() as usize, og_len, "invalid length");
 
         let encoded_len = rnd.encoded_leb128_len();
-        prop_assert_eq!(encoded_len, len);
+        prop_assert_eq!(encoded_len, len.get() as usize);
     }
 
     #[property_test]
@@ -609,13 +617,13 @@ mod tests {
         let mut buffer: [u8; 8] = [0u8; 8];
         let og_len = u32::encode_leb128(val, &mut buffer.as_mut_slice());
 
-        // SAFETY - ValidRead: We created a buffer of 16 bytes.
-        let (rnd, len) = unsafe { u32::decode_leb128(&buffer[..]).unwrap() };
+        // SAFETY - ValidRead: We created a buffer of 8 bytes.
+        let (rnd, len) = unsafe { u32::decode_leb128(buffer.as_ptr()).unwrap() };
         prop_assert_eq!(rnd, val);
-        prop_assert_eq!(len, og_len);
+        prop_assert_eq!(len.get() as usize, og_len);
 
         let encoded_len = rnd.encoded_leb128_len();
-        prop_assert_eq!(encoded_len, len);
+        prop_assert_eq!(encoded_len, len.get() as usize);
     }
 
     #[property_test]

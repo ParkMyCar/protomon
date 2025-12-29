@@ -479,15 +479,17 @@ where
     let len = data.len();
 
     while offset + usize::cast_from(L::MAX_LEB_BYTES) <= len {
-        let (value, bytes_read) = unsafe { L::decode_leb128(&data[offset..])? };
+        let (value, bytes_read) = unsafe { L::decode_leb128(data.as_ptr().add(offset)) }
+            .ok_or_else(DecodeErrorKind::invalid_varint)?;
         dst.push(convert(value));
-        offset += bytes_read;
+        offset += usize::cast_from(bytes_read.get());
     }
 
     while offset < len {
-        let (value, bytes_read) = L::decode_leb128_safe(&data[offset..])?;
+        let (value, bytes_read) =
+            L::decode_leb128_safe(&data[offset..]).ok_or_else(DecodeErrorKind::invalid_varint)?;
         dst.push(convert(value));
-        offset += bytes_read;
+        offset += usize::cast_from(bytes_read.get());
     }
     Ok(())
 }
