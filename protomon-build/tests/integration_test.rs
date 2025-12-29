@@ -103,24 +103,34 @@ fn test_compile_with_extensions() {
     #![allow(missing_docs)]
     #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
     pub struct Container {
+        /// Regular repeated field (uses Repeated<T>)
         #[proto(tag = 1, repeated)]
         pub regular_tags: protomon::codec::Repeated<protomon::codec::ProtoString>,
+        /// Vec repeated field (uses Vec<T>)
         #[proto(tag = 2, repeated)]
         pub vec_tags: Vec<protomon::codec::ProtoString>,
+        /// Boxed field (for recursive types)
         #[proto(tag = 3, optional)]
         pub child: Option<Box<Container>>,
+        /// Lazy message field (uses LazyMessage<T>)
         #[proto(tag = 4, optional)]
         pub lazy_child: Option<Box<protomon::codec::LazyMessage<Container>>>,
+        /// Regular message field (no LazyMessage wrapper)
         #[proto(tag = 5, optional)]
         pub eager_child: Option<Box<Container>>,
+        /// Combined: lazy + boxed
         #[proto(tag = 6, optional)]
         pub lazy_boxed_child: Option<Box<protomon::codec::LazyMessage<Container>>>,
+        /// Fixed-size array for bytes (e.g., SHA256 hash)
         #[proto(tag = 7)]
         pub hash: [u8; 32usize],
+        /// Regular bytes field (uses ProtoBytes)
         #[proto(tag = 8)]
         pub data: protomon::codec::ProtoBytes,
+        /// Fixed-size array with different size (e.g., UUID)
         #[proto(tag = 9)]
         pub uuid: [u8; 16usize],
+        /// Vec<u8> for bytes field (uses Vec<u8> instead of ProtoBytes)
         #[proto(tag = 10)]
         pub vec_data: Vec<u8>,
     }
@@ -147,6 +157,7 @@ fn test_recursive_type_detection() {
     #![allow(clippy::all)]
     #![allow(warnings)]
     #![allow(missing_docs)]
+    /// Direct recursion: a message references itself
     #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
     pub struct Node {
         #[proto(tag = 1, optional)]
@@ -156,6 +167,7 @@ fn test_recursive_type_detection() {
         #[proto(tag = 3, optional)]
         pub right: Option<Box<Node>>,
     }
+    /// Indirect recursion: A -> B -> A
     #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
     pub struct TreeA {
         #[proto(tag = 1, optional)]
@@ -170,6 +182,7 @@ fn test_recursive_type_detection() {
         #[proto(tag = 2, optional)]
         pub parent: Option<Box<TreeA>>,
     }
+    /// No recursion: should not be boxed
     #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
     pub struct Leaf {
         #[proto(tag = 1, optional)]
@@ -177,6 +190,7 @@ fn test_recursive_type_detection() {
         #[proto(tag = 2, optional)]
         pub count: Option<i32>,
     }
+    /// References non-recursive type: should not be boxed
     #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
     pub struct Container {
         #[proto(tag = 1, repeated)]
@@ -205,6 +219,7 @@ fn test_oneof_generation() {
     #![allow(clippy::all)]
     #![allow(warnings)]
     #![allow(missing_docs)]
+    /// Message with a nullable oneof (default)
     #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
     pub struct NullableOneofMessage {
         #[proto(tag = 1)]
@@ -222,6 +237,7 @@ fn test_oneof_generation() {
             StringValue(protomon::codec::ProtoString),
         }
     }
+    /// Message with a non-nullable (required) oneof
     #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
     pub struct RequiredOneofMessage {
         #[proto(tag = 1)]
@@ -244,6 +260,7 @@ fn test_oneof_generation() {
             }
         }
     }
+    /// Message with both nullable and non-nullable oneofs
     #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
     pub struct MixedOneofMessage {
         #[proto(tag = 1)]
@@ -297,10 +314,11 @@ fn test_map_generation() {
     // - HashMap with hash map type
     // - Map with message values
     // - Map with various key types
-    insta::assert_snapshot!(content, @r#"
+    insta::assert_snapshot!(content, @"
     #![allow(clippy::all)]
     #![allow(warnings)]
     #![allow(missing_docs)]
+    /// A simple message to use as a map value.
     #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
     pub struct Person {
         #[proto(tag = 1)]
@@ -308,18 +326,46 @@ fn test_map_generation() {
         #[proto(tag = 2)]
         pub age: i32,
     }
+    /// Message with various map fields.
     #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
     pub struct MapContainer {
+        /// Default map (BTreeMap)
         #[proto(tag = 1, map)]
         pub scores: alloc::collections::BTreeMap<String, i32>,
+        /// Explicit BTreeMap
         #[proto(tag = 2, map)]
         pub labels: alloc::collections::BTreeMap<String, protomon::codec::ProtoString>,
+        /// HashMap (requires std feature)
         #[proto(tag = 3, map)]
         pub names: std::collections::HashMap<i32, protomon::codec::ProtoString>,
+        /// Map with message value
         #[proto(tag = 4, map)]
         pub people: alloc::collections::BTreeMap<String, Person>,
+        /// Map with int64 key
         #[proto(tag = 5, map)]
         pub flags: alloc::collections::BTreeMap<i64, bool>,
     }
-    "#);
+    ");
+}
+
+#[test]
+fn test_comment_generation() {
+    let out_dir = tempdir().expect("Failed to create temp dir");
+
+    Config::new()
+        .out_dir(out_dir.path())
+        .compile_protos(&["tests/proto/test_comments.proto"], &["tests/proto/"])
+        .expect("Failed to compile protos");
+
+    let test_rs = out_dir.path().join("test_comments.rs");
+    let content = fs::read_to_string(&test_rs).expect("Failed to read test_comments.rs");
+
+    // Snapshot the generated code - this captures:
+    // - Enum doc comments
+    // - Enum value doc comments
+    // - Message doc comments
+    // - Field doc comments
+    // - Oneof doc comments
+    // - Nested message doc comments
+    insta::assert_snapshot!(content);
 }

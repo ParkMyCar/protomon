@@ -7,6 +7,7 @@ use crate::context::{to_rust_field_name, GenerationContext};
 use crate::descriptor::{FieldDescriptorProto, Label, Type};
 use crate::Error;
 
+use super::comments::{doc_comment, CommentMap, DescriptorPath};
 use super::types::{
     build_full_type, map_key_type_to_rust, proto_type_to_rust, scalar_type_to_rust,
 };
@@ -17,10 +18,19 @@ pub fn generate_field(
     parent_path: &str,
     field: &FieldDescriptorProto,
     is_proto3: bool,
+    comments: &CommentMap,
+    msg_path: &DescriptorPath,
+    field_index: Option<usize>,
 ) -> Result<TokenStream, Error> {
     let name = field.name.as_ref().ok_or(Error::MissingName)?;
     let tag = field.number.ok_or(Error::MissingFieldNumber)?;
     let field_name = format_ident!("{}", to_rust_field_name(name));
+
+    // Get field comment
+    let field_doc = field_index
+        .map(|i| msg_path.field(i))
+        .and_then(|path| comments.get(&path).map(|c| doc_comment(c)))
+        .unwrap_or_default();
 
     let proto_type = field
         .field_type()
@@ -32,7 +42,7 @@ pub fn generate_field(
     if label == Label::Repeated && proto_type == Type::Message {
         if let Some(type_name) = field.type_name.as_deref() {
             if let Some(map_entry) = ctx.get_map_entry(type_name) {
-                return generate_map_field(ctx, field, tag, &field_name, map_entry);
+                return generate_map_field(ctx, field, tag, &field_name, map_entry, field_doc);
             }
         }
     }
@@ -58,6 +68,7 @@ pub fn generate_field(
     let proto_attr = build_proto_attr(tag, &rust_type);
 
     Ok(quote! {
+        #field_doc
         #proto_attr
         pub #field_name: #full_type,
     })
@@ -70,6 +81,7 @@ fn generate_map_field(
     tag: i32,
     field_name: &proc_macro2::Ident,
     map_entry: &crate::context::MapEntryInfo,
+    field_doc: TokenStream,
 ) -> Result<TokenStream, Error> {
     let tag_lit = proc_macro2::Literal::i32_unsuffixed(tag);
 
@@ -117,6 +129,7 @@ fn generate_map_field(
     };
 
     Ok(quote! {
+        #field_doc
         #[proto(tag = #tag_lit, map)]
         pub #field_name: #map_type,
     })

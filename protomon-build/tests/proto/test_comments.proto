@@ -1,0 +1,54 @@
+// Proto file for testing comment generation
+syntax = "proto3";
+
+package test_comments;
+
+// Status indicates the current state of a process.
+enum Status {
+    // Unknown status - should not be used.
+    STATUS_UNKNOWN = 0;
+    // Process is currently running.
+    STATUS_RUNNING = 1;
+    // Process has completed successfully.
+    STATUS_COMPLETED = 2;
+    // Process failed with an error.
+    STATUS_FAILED = 3;
+}
+
+// User represents a user account in the system.
+// This message contains the core user information.
+message User {
+    // The unique identifier for this user.
+    string id = 1;
+
+    // The user's display name.
+    // This is shown in the UI.
+    string name = 2;
+
+    // The user's email address.
+    optional string email = 3;
+
+    // The user's current status.
+    Status status = 4;
+
+    // Contact information for the user.
+    oneof contact {
+        // The user's phone number.
+        string phone = 5;
+        // The user's fax number (legacy).
+        string fax = 6;
+    }
+
+    // Address represents a physical mailing address.
+    message Address {
+        // Street address line 1.
+        string street = 1;
+        // City name.
+        string city = 2;
+        // Country code (ISO 3166-1 alpha-2).
+        string country = 3;
+    }
+
+    // The user's primary address.
+    optional Address address = 7;
+}

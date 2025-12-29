@@ -41,9 +41,49 @@ pub struct FileDescriptorProto {
     /// All top-level enum definitions in this file.
     #[proto(tag = 5, repeated)]
     pub enum_type: Vec<EnumDescriptorProto>,
+    /// Source code information for comments.
+    #[proto(tag = 9, optional)]
+    pub source_code_info: Option<SourceCodeInfo>,
     /// The syntax of the proto file (e.g., "proto2", "proto3").
     #[proto(tag = 12, optional)]
     pub syntax: Option<String>,
+}
+
+/// Encapsulates information about the original source file from which a
+/// FileDescriptorProto was generated.
+/// Corresponds to google.protobuf.SourceCodeInfo.
+#[derive(Debug, Clone, Default, ProtoMessageDerive)]
+pub struct SourceCodeInfo {
+    /// A Location identifies a piece of source code in a .proto file which
+    /// corresponds to a particular definition.
+    #[proto(tag = 1, repeated)]
+    pub location: Vec<Location>,
+}
+
+/// Represents a location in a source file with associated comments.
+/// Corresponds to google.protobuf.SourceCodeInfo.Location.
+#[derive(Debug, Clone, Default, ProtoMessageDerive)]
+pub struct Location {
+    /// Identifies which part of the FileDescriptorProto was defined at this
+    /// location. Each element is a field number or an index.
+    #[proto(tag = 1, repeated)]
+    pub path: Vec<i32>,
+    /// Always has exactly three or four elements: start line, start column,
+    /// end line (optional, otherwise assumed same as start line), end column.
+    #[proto(tag = 2, repeated)]
+    pub span: Vec<i32>,
+    /// If this SourceCodeInfo represents a complete declaration, these are any
+    /// comments appearing before and after the declaration which appear to be
+    /// attached to the declaration.
+    #[proto(tag = 3, optional)]
+    pub leading_comments: Option<String>,
+    /// Comments that appear after the declaration.
+    #[proto(tag = 4, optional)]
+    pub trailing_comments: Option<String>,
+    /// Comments that appear before the declaration but are separated from it
+    /// by blank lines.
+    #[proto(tag = 6, repeated)]
+    pub leading_detached_comments: Vec<String>,
 }
 
 /// Describes a message type.

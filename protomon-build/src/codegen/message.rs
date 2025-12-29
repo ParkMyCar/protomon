@@ -7,6 +7,7 @@ use crate::context::{to_rust_field_name, GenerationContext};
 use crate::descriptor::DescriptorProto;
 use crate::Error;
 
+use super::comments::{doc_comment, CommentMap, DescriptorPath};
 use super::enumeration::generate_enum;
 use super::field::generate_field;
 use super::oneof::{collect_oneofs, generate_oneof_enum, generate_oneof_field};
@@ -17,6 +18,8 @@ pub fn generate_message(
     parent_path: &str,
     message: &DescriptorProto,
     is_proto3: bool,
+    comments: &CommentMap,
+    msg_path: &DescriptorPath,
 ) -> Result<TokenStream, Error> {
     let name = message.name.as_ref().ok_or(Error::MissingName)?;
     let struct_name = format_ident!("{}", name);
@@ -26,6 +29,12 @@ pub fn generate_message(
         format!("{}.{}", parent_path, name)
     };
 
+    // Generate doc comment for the struct
+    let struct_doc = comments
+        .get(msg_path)
+        .map(|c| doc_comment(c))
+        .unwrap_or_default();
+
     // Collect oneofs (excluding proto3 optional synthetic oneofs)
     let oneofs = collect_oneofs(message);
 
@@ -33,6 +42,14 @@ pub fn generate_message(
     let oneof_field_indices: std::collections::HashSet<i32> = oneofs
         .iter()
         .flat_map(|o| o.fields.iter().filter_map(|f| f.number))
+        .collect();
+
+    // Build field index to original position map for comment lookup
+    let field_indices: std::collections::HashMap<i32, usize> = message
+        .field
+        .iter()
+        .enumerate()
+        .filter_map(|(i, f)| f.number.map(|n| (n, i)))
         .collect();
 
     // Generate regular fields (excluding oneof fields)
@@ -51,13 +68,16 @@ pub fn generate_message(
                 || f.proto3_optional.unwrap_or(false)
                 || !oneof_field_indices.contains(&field_num)
         })
-        .map(|f| generate_field(ctx, &full_path, f, is_proto3))
+        .map(|f| {
+            let field_index = f.number.and_then(|n| field_indices.get(&n).copied());
+            generate_field(ctx, &full_path, f, is_proto3, comments, msg_path, field_index)
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     // Generate oneof fields
     let oneof_fields: Vec<TokenStream> = oneofs
         .iter()
-        .map(|o| generate_oneof_field(name, o))
+        .map(|o| generate_oneof_field(name, o, comments, msg_path))
         .collect::<Result<Vec<_>, _>>()?;
 
     // Generate nested types
@@ -70,12 +90,14 @@ pub fn generate_message(
     }
 
     // Nested enums
-    for enum_type in &message.enum_type {
-        let enum_tokens = generate_enum(&full_path, enum_type)?;
+    for (enum_index, enum_type) in message.enum_type.iter().enumerate() {
+        let enum_path = msg_path.nested_enum(enum_index);
+        let enum_tokens = generate_enum(&full_path, enum_type, comments, &enum_path)?;
         nested.extend(enum_tokens);
     }
 
-    // Nested messages
+    // Nested messages (with map entry counter for proper indexing)
+    let mut nested_msg_index = 0;
     for nested_msg in &message.nested_type {
         // Skip map entry types (synthetic messages for map fields)
         if nested_msg
@@ -84,10 +106,14 @@ pub fn generate_message(
             .and_then(|o| o.map_entry)
             .unwrap_or(false)
         {
+            nested_msg_index += 1;
             continue;
         }
-        let msg_tokens = generate_message(ctx, &full_path, nested_msg, is_proto3)?;
+        let nested_path = msg_path.nested_message(nested_msg_index);
+        let msg_tokens =
+            generate_message(ctx, &full_path, nested_msg, is_proto3, comments, &nested_path)?;
         nested.extend(msg_tokens);
+        nested_msg_index += 1;
     }
 
     let nested_mod = if nested.is_empty() {
@@ -103,6 +129,7 @@ pub fn generate_message(
     };
 
     Ok(quote! {
+        #struct_doc
         #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
         pub struct #struct_name {
             #(#fields)*

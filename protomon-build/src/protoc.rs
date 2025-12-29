@@ -53,6 +53,9 @@ pub fn invoke_protoc(
     // Include imports so we have full type information
     cmd.arg("--include_imports");
 
+    // Include source info for comments
+    cmd.arg("--include_source_info");
+
     // Extra user-provided args
     for arg in extra_args {
         cmd.arg(arg);

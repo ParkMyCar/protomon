@@ -1,0 +1,89 @@
+---
+source: protomon-build/tests/integration_test.rs
+expression: content
+---
+#![allow(clippy::all)]
+#![allow(warnings)]
+#![allow(missing_docs)]
+/// Status indicates the current state of a process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i32)]
+pub enum Status {
+    /// Unknown status - should not be used.
+    StatusUnknown = 0,
+    /// Process is currently running.
+    StatusRunning = 1,
+    /// Process has completed successfully.
+    StatusCompleted = 2,
+    /// Process failed with an error.
+    StatusFailed = 3,
+}
+impl Status {
+    /// Convert from i32, returning None for unknown values.
+    pub fn from_i32(value: i32) -> Option<Self> {
+        match value {
+            0 => Some(Self::StatusUnknown),
+            1 => Some(Self::StatusRunning),
+            2 => Some(Self::StatusCompleted),
+            3 => Some(Self::StatusFailed),
+            _ => None,
+        }
+    }
+}
+impl From<Status> for i32 {
+    fn from(value: Status) -> Self {
+        value as i32
+    }
+}
+impl Default for Status {
+    fn default() -> Self {
+        Self::StatusUnknown
+    }
+}
+/// User represents a user account in the system.
+/// This message contains the core user information.
+#[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+pub struct User {
+    /// The unique identifier for this user.
+    #[proto(tag = 1)]
+    pub id: protomon::codec::ProtoString,
+    /// The user's display name.
+    /// This is shown in the UI.
+    #[proto(tag = 2)]
+    pub name: protomon::codec::ProtoString,
+    /// The user's email address.
+    #[proto(tag = 3, optional)]
+    pub email: Option<protomon::codec::ProtoString>,
+    /// The user's current status.
+    #[proto(tag = 4)]
+    pub status: i32,
+    /// The user's primary address.
+    #[proto(tag = 7, optional)]
+    pub address: Option<user::Address>,
+    /// Contact information for the user.
+    #[proto(oneof, tags = "5, 6")]
+    pub contact: Option<user::Contact>,
+}
+pub mod user {
+    use super::*;
+    #[derive(Debug, Clone, PartialEq, protomon::ProtoOneof)]
+    pub enum Contact {
+        #[proto(tag = 5u32)]
+        Phone(protomon::codec::ProtoString),
+        #[proto(tag = 6u32)]
+        Fax(protomon::codec::ProtoString),
+    }
+    /// Address represents a physical mailing address.
+    #[derive(Debug, Clone, Default, protomon::ProtoMessage)]
+    pub struct Address {
+        /// Street address line 1.
+        #[proto(tag = 1)]
+        pub street: protomon::codec::ProtoString,
+        /// City name.
+        #[proto(tag = 2)]
+        pub city: protomon::codec::ProtoString,
+        /// Country code (ISO 3166-1 alpha-2).
+        #[proto(tag = 3)]
+        pub country: protomon::codec::ProtoString,
+    }
+}

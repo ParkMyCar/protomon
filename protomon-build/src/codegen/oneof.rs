@@ -7,6 +7,7 @@ use crate::context::{to_rust_field_name, GenerationContext};
 use crate::descriptor::{DescriptorProto, FieldDescriptorProto, OneofDescriptorProto};
 use crate::Error;
 
+use super::comments::{doc_comment, CommentMap, DescriptorPath};
 use super::types::proto_type_to_rust;
 
 /// Information about a oneof and its fields.
@@ -17,6 +18,8 @@ pub struct OneofInfo<'a> {
     pub fields: Vec<&'a FieldDescriptorProto>,
     /// Whether this oneof is nullable (wrapped in Option).
     pub nullable: bool,
+    /// Index of the oneof in the parent message (for comment lookup).
+    pub oneof_index: usize,
 }
 
 /// Collect oneofs from a message, filtering out synthetic oneofs (proto3 optional).
@@ -53,6 +56,7 @@ pub fn collect_oneofs<'a>(message: &'a DescriptorProto) -> Vec<OneofInfo<'a>> {
                 oneof,
                 fields,
                 nullable,
+                oneof_index: index,
             })
         })
         .collect()
@@ -142,10 +146,19 @@ pub fn generate_oneof_enum(
 pub fn generate_oneof_field(
     parent_message_name: &str,
     oneof: &OneofInfo,
+    comments: &CommentMap,
+    msg_path: &DescriptorPath,
 ) -> Result<TokenStream, Error> {
     let oneof_name = oneof.oneof.name.as_ref().ok_or(Error::MissingName)?;
     let field_name = format_ident!("{}", to_rust_field_name(oneof_name));
     let enum_name = format_ident!("{}", to_pascal_case(oneof_name));
+
+    // Get oneof comment
+    let oneof_path = msg_path.oneof(oneof.oneof_index);
+    let oneof_doc = comments
+        .get(&oneof_path)
+        .map(|c| doc_comment(c))
+        .unwrap_or_default();
 
     // The enum is defined in a submodule named after the parent message
     let mod_name = format_ident!("{}", to_rust_field_name(parent_message_name));
@@ -166,12 +179,14 @@ pub fn generate_oneof_field(
     if oneof.nullable {
         // Nullable oneof: Option<EnumType>
         Ok(quote! {
+            #oneof_doc
             #[proto(oneof, tags = #tags_str)]
             pub #field_name: Option<#full_enum_type>,
         })
     } else {
         // Non-nullable oneof: EnumType with required attribute
         Ok(quote! {
+            #oneof_doc
             #[proto(oneof, tags = #tags_str, required)]
             pub #field_name: #full_enum_type,
         })

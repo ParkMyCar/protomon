@@ -1,5 +1,6 @@
 //! Code generation from protobuf descriptors.
 
+mod comments;
 mod enumeration;
 mod field;
 mod message;
@@ -8,6 +9,8 @@ mod oneof;
 mod recursion;
 mod types;
 
+pub use comments::CommentMap;
+use comments::DescriptorPath;
 pub use recursion::{find_recursive_fields, RecursiveField};
 
 use std::collections::HashMap;
@@ -91,17 +94,30 @@ fn generate_file(
     let syntax = file.syntax.as_deref().unwrap_or("proto2");
     let is_proto3 = syntax == "proto3";
 
+    // Build comment map from source code info
+    let comments = CommentMap::from_file(file);
+
     let mut tokens = TokenStream::new();
 
     // Generate enums
-    for enum_type in &file.enum_type {
-        let enum_tokens = enumeration::generate_enum(&format!(".{}", package), enum_type)?;
+    for (enum_index, enum_type) in file.enum_type.iter().enumerate() {
+        let enum_path = DescriptorPath::top_level_enum(enum_index);
+        let enum_tokens =
+            enumeration::generate_enum(&format!(".{}", package), enum_type, &comments, &enum_path)?;
         tokens.extend(enum_tokens);
     }
 
     // Generate messages (including nested)
-    for msg in &file.message_type {
-        let msg_tokens = message::generate_message(ctx, &format!(".{}", package), msg, is_proto3)?;
+    for (msg_index, msg) in file.message_type.iter().enumerate() {
+        let msg_path = DescriptorPath::message(msg_index);
+        let msg_tokens = message::generate_message(
+            ctx,
+            &format!(".{}", package),
+            msg,
+            is_proto3,
+            &comments,
+            &msg_path,
+        )?;
         tokens.extend(msg_tokens);
     }
 

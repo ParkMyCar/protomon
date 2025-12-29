@@ -6,6 +6,8 @@ use quote::{format_ident, quote};
 use crate::descriptor::EnumDescriptorProto;
 use crate::Error;
 
+use super::comments::{doc_comment, CommentMap, DescriptorPath};
+
 /// Generate Rust enum for a proto enum.
 ///
 /// Note: For now, we represent enums as i32 in message fields.
@@ -13,20 +15,40 @@ use crate::Error;
 pub fn generate_enum(
     _parent_path: &str,
     enum_type: &EnumDescriptorProto,
+    comments: &CommentMap,
+    enum_path: &DescriptorPath,
 ) -> Result<TokenStream, Error> {
     let name = enum_type.name.as_ref().ok_or(Error::MissingName)?;
     let enum_name = format_ident!("{}", name);
 
-    // Generate variants
+    // Generate doc comment for the enum
+    let enum_doc = comments
+        .get(enum_path)
+        .map(|c| doc_comment(c))
+        .unwrap_or_default();
+
+    // Generate variants with comments
     let variants: Vec<TokenStream> = enum_type
         .value
         .iter()
-        .map(|v| -> Result<TokenStream, Error> {
+        .enumerate()
+        .map(|(i, v)| -> Result<TokenStream, Error> {
             let variant_name = v.name.as_ref().ok_or(Error::MissingName)?;
             let variant_ident = format_ident!("{}", to_pascal_case(variant_name));
             let number = v.number.ok_or(Error::MissingFieldNumber)?;
             let number_lit = proc_macro2::Literal::i32_unsuffixed(number);
-            Ok(quote!(#variant_ident = #number_lit))
+
+            // Get comment for this enum value
+            let value_path = enum_path.enum_value(i);
+            let value_doc = comments
+                .get(&value_path)
+                .map(|c| doc_comment(c))
+                .unwrap_or_default();
+
+            Ok(quote! {
+                #value_doc
+                #variant_ident = #number_lit
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -54,6 +76,7 @@ pub fn generate_enum(
     let default_variant = format_ident!("{}", to_pascal_case(default_variant_name));
 
     Ok(quote! {
+        #enum_doc
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         #[repr(i32)]
         pub enum #enum_name {
