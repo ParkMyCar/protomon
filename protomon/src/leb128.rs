@@ -281,8 +281,9 @@ impl LebCodec for u64 {
         //
         // For each lz value, significant_bits = 64 - lz
         // bytes = ceil(significant_bits / 7), minimum 1
+        // Static to ensure single copy in .rodata, not duplicated at inline sites.
         #[rustfmt::skip]
-        const LZ_TO_LEN: [u8; 65] = [
+        static LZ_TO_LEN: [u8; 65] = [
             10,                                         // 0:     64 bits -> 10 bytes
             9, 9, 9, 9, 9, 9, 9,                        // 1-7:   63-57 bits -> 9 bytes
             8, 8, 8, 8, 8, 8, 8,                        // 8-14:  56-50 bits -> 8 bytes
@@ -404,8 +405,9 @@ impl LebCodec for u32 {
     #[inline]
     fn encoded_leb128_len(self) -> usize {
         // Lookup table mapping leading_zeros (0-32) to LEB128 byte count.
+        // Static to ensure single copy in .rodata, not duplicated at inline sites.
         #[rustfmt::skip]
-        const LZ_TO_LEN: [u8; 33] = [
+        static LZ_TO_LEN: [u8; 33] = [
             5, 5, 5, 5,                         // 0-3:   32-29 bits -> 5 bytes
             4, 4, 4, 4, 4, 4, 4,                // 4-10:  28-22 bits -> 4 bytes
             3, 3, 3, 3, 3, 3, 3,                // 11-17: 21-15 bits -> 3 bytes
