@@ -534,6 +534,7 @@ pub unsafe fn decode_u64_impl_a(data: *const u8) -> (u64, u32) {
 
 #[cfg(test)]
 mod tests {
+    use alloc::format;
     use proptest::prelude::*;
     use proptest::property_test;
 
