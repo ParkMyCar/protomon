@@ -362,6 +362,9 @@ impl_packed_fixed_8byte! {
 /// 1. Amortize loop overhead over more elements
 /// 2. Better utilize 64-byte cache lines (half a cache line per iteration)
 /// 3. Give the CPU more opportunity for instruction-level parallelism
+///
+/// TODO(parker): Instead of decoding in a loop, I think we can actually just
+/// do a memcpy from the `data` into the `dst`.
 #[inline]
 fn decode_packed_4byte<T: PackedElement>(data: &[u8], dst: &mut Vec<T>) -> Result<(), DecodeError> {
     let len = data.len();
@@ -410,6 +413,9 @@ fn decode_packed_4byte<T: PackedElement>(data: &[u8], dst: &mut Vec<T>) -> Resul
 /// 1. Amortize loop overhead over more elements
 /// 2. Better utilize 64-byte cache lines (half a cache line per iteration)
 /// 3. Give the CPU more opportunity for instruction-level parallelism
+///
+/// TODO(parker): Instead of decoding in a loop, I think we can actually just
+/// do a memcpy from the `data` into the `dst`.
 #[inline]
 fn decode_packed_8byte<T: PackedElement>(data: &[u8], dst: &mut Vec<T>) -> Result<(), DecodeError> {
     let len = data.len();
