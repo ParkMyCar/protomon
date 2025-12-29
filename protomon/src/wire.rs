@@ -14,14 +14,18 @@ pub const MAXIMUM_TAG_VAL: u64 = (1 << 29) - 1;
 ///
 /// Follows the specification from <https://protobuf.dev/programming-guides/encoding>
 /// under the "Message Structure" section.
-#[inline]
+///
+/// Hot path for encoding - called for every field in every message.
+#[inline(always)]
 pub fn encode_key<B: bytes::BufMut>(wire_type: WireType, tag: u32, buf: &mut B) {
     let key = (tag << 3) | u32::cast_from(wire_type.into_val());
     u32::encode_leb128(key, buf);
 }
 
 /// Returns the encoded length of a field key (tag + wire type).
-#[inline]
+///
+/// Called frequently during encoded_len() calculations.
+#[inline(always)]
 pub fn encoded_key_len(tag: u32) -> usize {
     // Wire type is 3 bits, so key = (tag << 3) | wire_type
     // The wire type doesn't affect the length since it only uses 3 bits
@@ -33,7 +37,11 @@ pub fn encoded_key_len(tag: u32) -> usize {
 ///
 /// Follows the specification from <https://protobuf.dev/programming-guides/encoding>
 /// under the "Message Structure" section.
-#[inline]
+///
+/// This is one of the hottest functions in the decode path - it's called
+/// for every field in every message. We use `#[inline(always)]` to ensure
+/// the compiler inlines this at every call site for maximum performance.
+#[inline(always)]
 pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeErrorKind> {
     let chunk = buf.chunk();
     let chunk_len = chunk.len();
@@ -89,7 +97,10 @@ pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeErrorKind> 
 ///
 /// Protobuf supports backwards and fowards compatiblity by skipping fields
 /// we don't know about. We "skip" a field by advancing our buffer past it.
-#[inline]
+///
+/// This is on the hot path for message decoding - called for unknown fields
+/// and during lazy repeated field iteration.
+#[inline(always)]
 pub fn skip_field<B: bytes::Buf>(wire_type: WireType, buf: &mut B) -> Result<(), DecodeErrorKind> {
     let skip_len = match wire_type {
         WireType::Varint => {
