@@ -6,6 +6,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
+use syn::spanned::Spanned;
 use syn::{DeriveInput, Field, Fields, Ident, Result, Type, Variant};
 
 /// Derive macro for implementing `ProtoMessage` trait.
@@ -52,6 +53,8 @@ struct FieldInfo<'a> {
     oneof_tags: Option<Vec<u32>>,
     /// If this is a required (non-nullable) oneof field.
     oneof_required: bool,
+    /// If this is the unknown fields buffer (for preserving unknown fields).
+    unknown: bool,
 }
 
 fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
@@ -83,6 +86,7 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
                 map: attrs.map,
                 oneof_tags: attrs.oneof_tags,
                 oneof_required: attrs.oneof_required,
+                unknown: attrs.unknown,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -175,9 +179,48 @@ struct ProtoFieldAttrs {
     map: bool,
     oneof_tags: Option<Vec<u32>>,
     oneof_required: bool,
+    unknown: bool,
 }
 
-/// Parse #[proto(tag = N, repeated, optional, map, oneof, tags = "1, 2, 3", required)] attributes.
+/// Validates that a tag number is within the valid Protocol Buffers range.
+///
+/// Valid tags are 1 to 536870911 (2^29-1), excluding the reserved range 19000-19999.
+fn validate_tag(tag: u32, span: proc_macro2::Span) -> Result<()> {
+    const MAX_TAG: u32 = 536_870_911; // 2^29 - 1
+    const RESERVED_START: u32 = 19000;
+    const RESERVED_END: u32 = 19999;
+
+    if tag == 0 {
+        return Err(syn::Error::new(
+            span,
+            "Tag number 0 is invalid. Valid tag numbers are 1 to 536870911, excluding 19000-19999",
+        ));
+    }
+
+    if tag > MAX_TAG {
+        return Err(syn::Error::new(
+            span,
+            format!(
+                "Tag number {} exceeds the maximum allowed value of {} (2^29-1)",
+                tag, MAX_TAG
+            ),
+        ));
+    }
+
+    if (RESERVED_START..=RESERVED_END).contains(&tag) {
+        return Err(syn::Error::new(
+            span,
+            format!(
+                "Tag number {} is in the reserved range {}-{}",
+                tag, RESERVED_START, RESERVED_END
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Parse #[proto(tag = N, repeated, optional, map, oneof, tags = "1, 2, 3", required, unknown)] attributes.
 fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
     let mut tag = None;
     let mut repeated = false;
@@ -186,13 +229,16 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
     let mut is_oneof = false;
     let mut oneof_tags_str: Option<String> = None;
     let mut required = false;
+    let mut unknown = false;
 
     for attr in &field.attrs {
         if attr.path().is_ident("proto") {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("tag") {
                     let value: syn::LitInt = meta.value()?.parse()?;
-                    tag = Some(value.base10_parse::<u32>()?);
+                    let parsed_tag = value.base10_parse::<u32>()?;
+                    validate_tag(parsed_tag, value.span())?;
+                    tag = Some(parsed_tag);
                 } else if meta.path.is_ident("repeated") {
                     repeated = true;
                 } else if meta.path.is_ident("optional") {
@@ -206,6 +252,8 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
                     oneof_tags_str = Some(value.value());
                 } else if meta.path.is_ident("required") {
                     required = true;
+                } else if meta.path.is_ident("unknown") {
+                    unknown = true;
                 }
                 Ok(())
             })?;
@@ -219,9 +267,11 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
                 let tags: Result<Vec<u32>> = tags_str
                     .split(',')
                     .map(|s| {
-                        s.trim()
+                        let parsed_tag = s.trim()
                             .parse::<u32>()
-                            .map_err(|_| syn::Error::new_spanned(field, "invalid tag in tags list"))
+                            .map_err(|_| syn::Error::new_spanned(field, "invalid tag in tags list"))?;
+                        validate_tag(parsed_tag, field.span())?;
+                        Ok(parsed_tag)
                     })
                     .collect();
                 Some(tags?)
@@ -294,8 +344,9 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
     // =========================================================================
 
     // For oneof fields, tag is not required (we use the tags list instead)
-    // Use 0 as placeholder since it's not used for oneof fields
-    let tag = if is_oneof {
+    // For unknown fields, tag is not required (it's handled specially)
+    // Use 0 as placeholder since it's not used for these fields
+    let tag = if is_oneof || unknown {
         tag.unwrap_or(0)
     } else {
         match tag {
@@ -315,8 +366,8 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
     const RESERVED_START: u32 = 19000;
     const RESERVED_END: u32 = 19999;
 
-    // Only validate non-oneof tags (oneof uses 0 as placeholder)
-    if !is_oneof {
+    // Only validate regular field tags (oneof and unknown use 0 as placeholder)
+    if !is_oneof && !unknown {
         if !(MIN_TAG..=MAX_TAG).contains(&tag) {
             return Err(syn::Error::new_spanned(
                 field,
@@ -365,14 +416,22 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
         map,
         oneof_tags,
         oneof_required: is_oneof && required,
+        unknown,
     })
 }
 
 fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
+    // Find the unknown field if present
+    let unknown_field = fields.iter().find(|f| f.unknown);
+    let has_unknown_field = unknown_field.is_some();
+
+    // Filter out the unknown field from normal processing
+    let regular_fields: Vec<_> = fields.iter().filter(|f| !f.unknown).collect();
+
     // Generate field initializations that work directly on dst
     // Only repeated fields need init_repeated - other fields are already default
     // (caller is responsible for providing a default-initialized dst)
-    let field_inits = fields.iter().filter_map(|f| {
+    let field_inits = regular_fields.iter().filter_map(|f| {
         if f.repeated {
             let fname = f.name;
             let tag = f.tag;
@@ -385,8 +444,8 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
     });
 
     // Collect oneof fields, separating required from optional
-    let oneof_fields: Vec<_> = fields.iter().filter(|f| f.oneof_tags.is_some()).collect();
-    let (required_oneof_fields, optional_oneof_fields): (Vec<_>, Vec<_>) =
+    let oneof_fields: Vec<&&FieldInfo> = regular_fields.iter().filter(|f| f.oneof_tags.is_some()).collect();
+    let (required_oneof_fields, optional_oneof_fields): (Vec<&&FieldInfo>, Vec<&&FieldInfo>) =
         oneof_fields.into_iter().partition(|f| f.oneof_required);
 
     // Generate temporary variables for required oneofs
@@ -399,8 +458,18 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
         }
     });
 
-    // Generate match arms for regular fields
-    let regular_decode_arms = fields.iter().filter_map(|f| {
+    // If we have an unknown field, initialize a buffer to collect unknown field bytes
+    let unknown_buffer_init = if has_unknown_field {
+        quote! {
+            use alloc::vec::Vec;
+            let mut unknown_buf = Vec::new();
+        }
+    } else {
+        quote!()
+    };
+
+    // Generate match arms for regular fields (excluding unknown field)
+    let regular_decode_arms = regular_fields.iter().filter_map(|f| {
         // Skip oneof fields - they're handled separately
         if f.oneof_tags.is_some() {
             return None;
@@ -489,6 +558,73 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
         }
     });
 
+    // Generate the default match arm (for unknown fields)
+    let default_arm = if has_unknown_field {
+        quote! {
+            _ => {
+                // Collect unknown field: we need to preserve the key and the value
+                // First, encode the key (tag and wire type) into unknown_buf
+                use protomon::leb128::LebCodec;
+                let key = (tag << 3) | wire_type as u32;
+                key.encode_leb128(&mut unknown_buf);
+
+                // Then copy the field value into unknown_buf
+                match wire_type {
+                    protomon::wire::WireType::Varint => {
+                        // Read the varint and encode it to unknown_buf
+                        let (val, _) = u64::decode_leb128_buf(&mut buf)?;
+                        val.encode_leb128(&mut unknown_buf);
+                    }
+                    protomon::wire::WireType::I64 => {
+                        // Copy 8 bytes directly without intermediate Bytes allocation
+                        if buf.remaining() < 8 {
+                            return Err(protomon::error::DecodeErrorKind::UnexpectedEndOfBuffer);
+                        }
+                        unknown_buf.extend_from_slice(&buf.chunk()[..8]);
+                        buf.advance(8);
+                    }
+                    protomon::wire::WireType::Len => {
+                        // Read length and copy length + data
+                        let len = protomon::wire::decode_len(&mut buf)?;
+                        // Encode the length to unknown_buf
+                        (len as u64).encode_leb128(&mut unknown_buf);
+                        // Copy the data directly without intermediate Bytes allocation
+                        if buf.remaining() < len {
+                            return Err(protomon::error::DecodeErrorKind::UnexpectedEndOfBuffer);
+                        }
+                        unknown_buf.extend_from_slice(&buf.chunk()[..len]);
+                        buf.advance(len);
+                    }
+                    protomon::wire::WireType::I32 => {
+                        // Copy 4 bytes directly without intermediate Bytes allocation
+                        if buf.remaining() < 4 {
+                            return Err(protomon::error::DecodeErrorKind::UnexpectedEndOfBuffer);
+                        }
+                        unknown_buf.extend_from_slice(&buf.chunk()[..4]);
+                        buf.advance(4);
+                    }
+                    protomon::wire::WireType::SGroup | protomon::wire::WireType::EGroup => {
+                        return Err(protomon::error::DecodeErrorKind::DeprecatedGroupEncoding);
+                    }
+                }
+            }
+        }
+    } else {
+        quote! {
+            _ => skip_field(wire_type, &mut buf)?,
+        }
+    };
+
+    // After the decode loop, assign the unknown bytes to the unknown field
+    let unknown_field_assignment = if let Some(unk_field) = unknown_field {
+        let fname = unk_field.name;
+        quote! {
+            dst.#fname = bytes::Bytes::from(unknown_buf);
+        }
+    } else {
+        quote!()
+    };
+
     quote! {
         #[inline(always)]
         fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), protomon::error::DecodeErrorKind> {
@@ -500,6 +636,7 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
             let mut buf = buf;
             #(#field_inits)*
             #(#required_oneof_temps)*
+            #unknown_buffer_init
 
             while buf.has_remaining() {
                 let (wire_type, tag) = decode_key(&mut buf)?;
@@ -508,11 +645,12 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
                     #(#regular_decode_arms)*
                     #(#optional_oneof_decode_arms)*
                     #(#required_oneof_decode_arms)*
-                    _ => skip_field(wire_type, &mut buf)?,
+                    #default_arm
                 }
             }
 
             #(#required_oneof_validations)*
+            #unknown_field_assignment
 
             Ok(())
         }
@@ -520,7 +658,13 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
 }
 
 fn generate_encode(fields: &[FieldInfo]) -> TokenStream2 {
-    let encode_fields = fields.iter().map(|f| {
+    // Find the unknown field if present
+    let unknown_field = fields.iter().find(|f| f.unknown);
+
+    // Filter out the unknown field from normal processing
+    let regular_fields: Vec<_> = fields.iter().filter(|f| !f.unknown).collect();
+
+    let encode_fields = regular_fields.iter().map(|f| {
         let fname = f.name;
         let fty = f.ty;
         let tag = f.tag;
@@ -564,15 +708,36 @@ fn generate_encode(fields: &[FieldInfo]) -> TokenStream2 {
         }
     });
 
+    // Append the unknown field bytes at the end
+    let encode_unknown = if let Some(unk_field) = unknown_field {
+        let fname = unk_field.name;
+        quote! {
+            // Append unknown fields
+            if !self.#fname.is_empty() {
+                use bytes::Buf;
+                buf.put_slice(&self.#fname);
+            }
+        }
+    } else {
+        quote!()
+    };
+
     quote! {
         fn encode_message<B: bytes::BufMut>(&self, buf: &mut B) {
             #(#encode_fields)*
+            #encode_unknown
         }
     }
 }
 
 fn generate_len(fields: &[FieldInfo]) -> TokenStream2 {
-    let len_fields = fields.iter().map(|f| {
+    // Find the unknown field if present
+    let unknown_field = fields.iter().find(|f| f.unknown);
+
+    // Filter out the unknown field from normal processing
+    let regular_fields: Vec<_> = fields.iter().filter(|f| !f.unknown).collect();
+
+    let len_fields = regular_fields.iter().map(|f| {
         let fname = f.name;
         let fty = f.ty;
         let tag = f.tag;
@@ -614,10 +779,21 @@ fn generate_len(fields: &[FieldInfo]) -> TokenStream2 {
         }
     });
 
+    // Include the unknown field length
+    let len_unknown = if let Some(unk_field) = unknown_field {
+        let fname = unk_field.name;
+        quote! {
+            len += self.#fname.len();
+        }
+    } else {
+        quote!()
+    };
+
     quote! {
         fn encoded_message_len(&self) -> usize {
             let mut len = 0usize;
             #(#len_fields)*
+            #len_unknown
             len
         }
     }
@@ -752,7 +928,9 @@ fn parse_oneof_variant(variant: &Variant) -> Result<OneofVariantInfo<'_>> {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("tag") {
                     let value: syn::LitInt = meta.value()?.parse()?;
-                    tag = Some(value.base10_parse::<u32>()?);
+                    let parsed_tag = value.base10_parse::<u32>()?;
+                    validate_tag(parsed_tag, value.span())?;
+                    tag = Some(parsed_tag);
                 }
                 Ok(())
             })?;

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package test_unknown;
+
+import "protomon/extensions.proto";
+
+// Message that preserves unknown fields
+message MessageWithUnknown {
+  option (protomon.preserve_unknown) = true;
+
+  string name = 1;
+  int32 age = 2;
+}
+
+// Message without unknown field preservation
+message MessageWithoutUnknown {
+  string name = 1;
+  int32 age = 2;
+}
+
+// Newer version of the message with additional fields
+message MessageNewer {
+  string name = 1;
+  int32 age = 2;
+  string email = 3;
+  int64 score = 4;
+}

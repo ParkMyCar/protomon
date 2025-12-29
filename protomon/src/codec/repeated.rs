@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeErrorKind;
-use crate::util::{CastFrom, TruncatingCastFrom};
+use crate::util::CastFrom;
 use crate::wire::{self, WireType};
 
 #[cfg(feature = "smallvec")]
