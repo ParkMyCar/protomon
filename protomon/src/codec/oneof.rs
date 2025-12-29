@@ -231,7 +231,7 @@ mod tests {
 
         // Decode
         let mut slice = &buf[..];
-        let (wire_type, tag) = wire::decode_key(&mut slice).unwrap();
+        let (wire_type, tag) = wire::decode_key(&mut slice).unwrap().into_parts();
         let decoded = Widget::decode_variant(tag, wire_type, &mut slice, 0).expect("decode failed");
 
         assert_eq!(decoded, Some(widget));
@@ -267,7 +267,7 @@ mod tests {
         42i32.encode(&mut buf);
 
         let mut slice = &buf[..];
-        let (wire_type, tag) = wire::decode_key(&mut slice).unwrap();
+        let (wire_type, tag) = wire::decode_key(&mut slice).unwrap().into_parts();
         let result = Widget::decode_variant(tag, wire_type, &mut slice, 0).unwrap();
 
         // Should return None for unknown tag
@@ -285,7 +285,7 @@ mod tests {
 
         // Decode into Option
         let mut slice = &buf[..];
-        let (wire_type, tag) = wire::decode_key(&mut slice).unwrap();
+        let (wire_type, tag) = wire::decode_key(&mut slice).unwrap().into_parts();
         let matched = decode_oneof_field(&mut widget, tag, wire_type, &mut slice, 0).unwrap();
 
         assert!(matched);
@@ -297,7 +297,7 @@ mod tests {
         true.encode(&mut buf2);
 
         let mut slice2 = &buf2[..];
-        let (wire_type2, tag2) = wire::decode_key(&mut slice2).unwrap();
+        let (wire_type2, tag2) = wire::decode_key(&mut slice2).unwrap().into_parts();
         let matched2 = decode_oneof_field(&mut widget, tag2, wire_type2, &mut slice2, 0).unwrap();
 
         assert!(matched2);
@@ -315,7 +315,7 @@ mod tests {
 
         // Decode and verify
         let mut slice = &buf[..];
-        let (wire_type, tag) = wire::decode_key(&mut slice).unwrap();
+        let (wire_type, tag) = wire::decode_key(&mut slice).unwrap().into_parts();
         assert_eq!(tag, 2);
         assert_eq!(wire_type, WireType::Len);
     }

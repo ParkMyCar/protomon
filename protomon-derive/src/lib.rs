@@ -641,7 +641,7 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
             #unknown_buffer_init
 
             while buf.has_remaining() {
-                let (wire_type, tag) = decode_key(&mut buf)?;
+                let (wire_type, tag) = decode_key(&mut buf)?.into_parts();
                 let value_offset = original_len - buf.remaining();
                 match tag {
                     #(#regular_decode_arms)*

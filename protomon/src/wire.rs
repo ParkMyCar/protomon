@@ -1,5 +1,7 @@
 //! Wire format for Google's Protocol Buffers, aka [protobuf](https://protobuf.dev).
 
+use core::num::NonZeroU64;
+
 use crate::error::{DecodeError, InvalidKeyReason};
 use crate::leb128::LebCodec;
 use crate::util::CastFrom;
@@ -9,6 +11,77 @@ use crate::util::{likely, unlikely};
 pub const MINIMUM_TAG_VAL: u32 = 1;
 /// Maximum value of a protobuf tag.
 pub const MAXIMUM_TAG_VAL: u32 = (1 << 29) - 1;
+
+/// A decoded protobuf field key containing a wire type and tag.
+///
+/// Packed into a [`NonZeroU64`] to enable register-based returns from
+/// [`decode_key`]. In an ideal world this type would use `NonZeroU32` which
+/// better resembles a protobuf key. But when used in a Result `rustc` passes
+/// this return value on the stack while [`NonZeroU64`] is passed in registers.
+///
+/// The layout mirrors the protobuf wire format:
+/// * Bits 0-2: wire type (0-5)
+/// * Bits 3-31: tag/field number (1 to 2^29-1)
+///
+/// Since tags start at 1, the minimum raw value is 8 (`1 << 3`), guaranteeing
+/// the value is always non-zero.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct ProtoKey(NonZeroU64);
+
+#[allow(clippy::as_conversions)]
+impl ProtoKey {
+    /// Creates a new `ProtoKey` from a raw key value, validating the wire type and tag.
+    ///
+    /// Returns an error if the wire type is invalid (> 5) or the tag is out of range.
+    /// The inlined validation ensures this compiles to the same code as manual checks.
+    #[inline(always)]
+    fn try_from_raw(raw_key: u32) -> Result<Self, DecodeError> {
+        // Validate wire type (first 3 bits must be 0-5).
+        let wire_type_raw = (raw_key & 0b111) as u8;
+        if unlikely(wire_type_raw > WireType::MAX_VAL) {
+            return Err(DecodeError::invalid_wire_type(wire_type_raw));
+        }
+
+        // Validate tag is in valid range (1 to 2^29-1).
+        let tag = raw_key >> 3;
+        if unlikely(tag == 0 || tag > MAXIMUM_TAG_VAL) {
+            return Err(DecodeError::invalid_key(InvalidKeyReason::TagOutOfRange));
+        }
+
+        // SAFETY: We validated tag >= 1 above, so raw_key >= 8, guaranteeing non-zero.
+        Ok(Self(unsafe { NonZeroU64::new_unchecked(raw_key as u64) }))
+    }
+
+    /// Returns the wire type component of this key.
+    #[inline(always)]
+    pub const fn wire_type(self) -> WireType {
+        let raw = (self.0.get() & 0b111) as u8;
+        // SAFETY: We validated the wire type during construction.
+        unsafe { core::mem::transmute::<u8, WireType>(raw) }
+    }
+
+    /// Returns the tag/field number component of this key.
+    #[inline(always)]
+    pub const fn tag(self) -> u32 {
+        (self.0.get() >> 3) as u32
+    }
+
+    /// Decomposes this key into its wire type and tag components.
+    #[inline(always)]
+    pub const fn into_parts(self) -> (WireType, u32) {
+        (self.wire_type(), self.tag())
+    }
+}
+
+impl core::fmt::Debug for ProtoKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ProtoKey")
+            .field("wire_type", &self.wire_type())
+            .field("tag", &self.tag())
+            .finish()
+    }
+}
 
 /// Encodes the provided tag and wire_type as a protobuf field key.
 ///
@@ -38,11 +111,16 @@ pub fn encoded_key_len(tag: u32) -> usize {
 /// Follows the specification from <https://protobuf.dev/programming-guides/encoding>
 /// under the "Message Structure" section.
 ///
-/// This is one of the hottest functions in the decode path - it's called
-/// for every field in every message. We use `#[inline(always)]` to ensure
-/// the compiler inlines this at every call site for maximum performance.
-#[inline(always)]
-pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeError> {
+/// # Performance
+///
+/// This is one of the hottest functions in the decode path - it's called for every field
+/// in every message. This method signature is very carefully written to ensure arguments
+/// and return values are passed entirely in registers instead of on the stack.
+///
+/// Note: We could annotate this with `#[inline(always)]` but the ~zero stack overhead
+/// makes this function very cheap to call, thus we rely on `rustc` or LTO to inline.
+#[inline]
+pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<ProtoKey, DecodeError> {
     let chunk = buf.chunk();
     let chunk_len = chunk.len();
 
@@ -62,20 +140,7 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
         u32::decode_leb128_buf(buf)?.0
     };
 
-    // The first three bits of the key are the wire type.
-    #[allow(clippy::as_conversions)]
-    let wire_type = (value & 0b111) as u8;
-    let wire_type = WireType::try_from_val(wire_type)?;
-
-    // The remaining bits are the tag / field number.
-    let tag = value >> 3;
-
-    // Validate tag is in valid range (1 to 2^29-1)
-    if unlikely(tag == 0 || tag > MAXIMUM_TAG_VAL) {
-        return Err(DecodeError::invalid_key(InvalidKeyReason::TagOutOfRange));
-    }
-
-    Ok((wire_type, tag))
+    ProtoKey::try_from_raw(value)
 }
 
 /// Decodes the length prefix for a length-delimited field.
@@ -230,7 +295,7 @@ mod test {
         fn test(tag: u32, wire_type: WireType) {
             let mut buf = Vec::with_capacity(16);
             encode_key(wire_type, tag, &mut buf);
-            let (rnd_wire_type, rnd_tag) = decode_key(&mut &buf[..]).unwrap();
+            let (rnd_wire_type, rnd_tag) = decode_key(&mut &buf[..]).unwrap().into_parts();
 
             assert_eq!(tag, rnd_tag);
             assert_eq!(wire_type, rnd_wire_type);

@@ -113,7 +113,7 @@ where
 
     // Parse the entry fields (key=1, value=2)
     while entry_buf.has_remaining() {
-        let (wire_type, tag) = wire::decode_key(&mut entry_buf)?;
+        let (wire_type, tag) = wire::decode_key(&mut entry_buf)?.into_parts();
         let value_offset = entry_bytes.len() - entry_buf.remaining();
 
         match tag {
@@ -361,7 +361,7 @@ mod tests {
         let mut decoded: BTreeMap<String, i32> = BTreeMap::new();
         let mut slice = &buf[..];
         while slice.has_remaining() {
-            let (wire_type, tag) = wire::decode_key(&mut slice).unwrap();
+            let (wire_type, tag) = wire::decode_key(&mut slice).unwrap().into_parts();
             assert_eq!(tag, 1);
             assert_eq!(wire_type, WireType::Len);
             decoded.decode_entry(&mut slice).unwrap();
@@ -383,7 +383,7 @@ mod tests {
         let mut decoded: BTreeMap<i32, String> = BTreeMap::new();
         let mut slice = &buf[..];
         while slice.has_remaining() {
-            let (_, _) = wire::decode_key(&mut slice).unwrap();
+            let _ = wire::decode_key(&mut slice).unwrap();
             decoded.decode_entry(&mut slice).unwrap();
         }
 
@@ -418,7 +418,7 @@ mod tests {
         let mut decoded: BTreeMap<String, i32> = BTreeMap::new();
         let mut slice = &buf[..];
         while slice.has_remaining() {
-            let (_, _) = wire::decode_key(&mut slice).unwrap();
+            let _ = wire::decode_key(&mut slice).unwrap();
             decoded.decode_entry(&mut slice).unwrap();
         }
 
@@ -438,7 +438,7 @@ mod tests {
         let mut decoded: BTreeMap<bool, i32> = BTreeMap::new();
         let mut slice = &buf[..];
         while slice.has_remaining() {
-            let (_, _) = wire::decode_key(&mut slice).unwrap();
+            let _ = wire::decode_key(&mut slice).unwrap();
             decoded.decode_entry(&mut slice).unwrap();
         }
 

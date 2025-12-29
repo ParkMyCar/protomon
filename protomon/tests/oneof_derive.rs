@@ -39,7 +39,7 @@ fn roundtrip_oneof(value: TestOneof) {
 
     // Decode
     let mut slice = &buf[..];
-    let (wire_type, tag) = wire::decode_key(&mut slice).unwrap();
+    let (wire_type, tag) = wire::decode_key(&mut slice).unwrap().into_parts();
     let decoded = TestOneof::decode_variant(tag, wire_type, &mut slice, 0)
         .expect("decode failed")
         .expect("tag not recognized");
@@ -118,7 +118,7 @@ fn test_derived_oneof_unknown_tag() {
     42i32.encode(&mut buf);
 
     let mut slice = &buf[..];
-    let (wire_type, tag) = wire::decode_key(&mut slice).unwrap();
+    let (wire_type, tag) = wire::decode_key(&mut slice).unwrap().into_parts();
     let result = TestOneof::decode_variant(tag, wire_type, &mut slice, 0).unwrap();
 
     // Should return None for unknown tag
@@ -136,7 +136,7 @@ fn test_derived_oneof_option_helpers() {
 
     // Decode into Option
     let mut slice = &buf[..];
-    let (wire_type, tag) = wire::decode_key(&mut slice).unwrap();
+    let (wire_type, tag) = wire::decode_key(&mut slice).unwrap().into_parts();
     let matched = decode_oneof_field(&mut oneof, tag, wire_type, &mut slice, 0).unwrap();
 
     assert!(matched);
@@ -149,7 +149,7 @@ fn test_derived_oneof_option_helpers() {
 
     // Decode and verify
     let mut slice = &encoded[..];
-    let (wire_type, tag) = wire::decode_key(&mut slice).unwrap();
+    let (wire_type, tag) = wire::decode_key(&mut slice).unwrap().into_parts();
     let mut decoded: Option<TestOneof> = None;
     decode_oneof_field(&mut decoded, tag, wire_type, &mut slice, 0).unwrap();
     assert_eq!(decoded, Some(TestOneof::IntValue(42)));
@@ -165,7 +165,7 @@ fn test_derived_oneof_last_one_wins() {
     42i32.encode(&mut buf1);
 
     let mut slice1 = &buf1[..];
-    let (wire_type1, tag1) = wire::decode_key(&mut slice1).unwrap();
+    let (wire_type1, tag1) = wire::decode_key(&mut slice1).unwrap().into_parts();
     decode_oneof_field(&mut oneof, tag1, wire_type1, &mut slice1, 0).unwrap();
     assert_eq!(oneof, Some(TestOneof::IntValue(42)));
 
@@ -175,7 +175,7 @@ fn test_derived_oneof_last_one_wins() {
     true.encode(&mut buf2);
 
     let mut slice2 = &buf2[..];
-    let (wire_type2, tag2) = wire::decode_key(&mut slice2).unwrap();
+    let (wire_type2, tag2) = wire::decode_key(&mut slice2).unwrap().into_parts();
     decode_oneof_field(&mut oneof, tag2, wire_type2, &mut slice2, 0).unwrap();
     assert_eq!(oneof, Some(TestOneof::BoolValue(true))); // Replaced!
 }
@@ -327,7 +327,7 @@ fn test_derived_oneof_with_boxed_message() {
 
     // Decode
     let mut slice = &buf[..];
-    let (wire_type, tag) = wire::decode_key(&mut slice).unwrap();
+    let (wire_type, tag) = wire::decode_key(&mut slice).unwrap().into_parts();
     let decoded = OneofWithNested::decode_variant(tag, wire_type, &mut slice, 0)
         .unwrap()
         .unwrap();

@@ -596,7 +596,7 @@ mod tests {
         let mut slice = &bytes_buf[..];
 
         while slice.has_remaining() {
-            let (wire_type, tag) = decode_key(&mut slice).unwrap();
+            let (wire_type, tag) = decode_key(&mut slice).unwrap().into_parts();
             // Value offset is now (after key decode)
             let value_offset = bytes_buf.len() - slice.len();
 
@@ -644,7 +644,7 @@ mod tests {
         let mut slice = &bytes_buf[..];
 
         while slice.has_remaining() {
-            let (wire_type, tag) = decode_key(&mut slice).unwrap();
+            let (wire_type, tag) = decode_key(&mut slice).unwrap().into_parts();
             let value_offset = bytes_buf.len() - slice.len();
 
             if tag == 2 {

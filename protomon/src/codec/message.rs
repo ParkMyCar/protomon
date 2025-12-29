@@ -199,7 +199,7 @@ mod tests {
             let mut slice = &buf[..];
 
             while slice.has_remaining() {
-                let (wire_type, tag) = decode_key(&mut slice)?;
+                let (wire_type, tag) = decode_key(&mut slice)?.into_parts();
                 let value_offset = buf.len() - slice.len();
                 match tag {
                     1 => ProtoString::decode_into(&mut slice, &mut dst.number, value_offset)?,
@@ -247,7 +247,7 @@ mod tests {
             let mut slice = &buf[..];
 
             while slice.has_remaining() {
-                let (wire_type, tag) = decode_key(&mut slice)?;
+                let (wire_type, tag) = decode_key(&mut slice)?.into_parts();
                 let value_offset = buf.len() - slice.len();
                 match tag {
                     1 => ProtoString::decode_into(&mut slice, &mut dst.name, value_offset)?,
@@ -342,7 +342,7 @@ mod tests {
             let mut phone = None;
 
             while slice.has_remaining() {
-                let (wire_type, tag) = decode_key(&mut slice)?;
+                let (wire_type, tag) = decode_key(&mut slice)?.into_parts();
                 let value_offset = buf.len() - slice.len();
                 match tag {
                     1 => ProtoString::decode_into(&mut slice, &mut name, value_offset)?,
