@@ -115,8 +115,7 @@ fn test_unknown_fields_not_preserved() {
     assert!(buf2.len() < original_len);
 
     // The unknown fields are lost
-    let decoded =
-        MessageWithoutUnknown::decode_message(Bytes::from(buf2)).expect("decode failed");
+    let decoded = MessageWithoutUnknown::decode_message(Bytes::from(buf2)).expect("decode failed");
     assert_eq!(decoded.name.as_str(), "Bob");
     assert_eq!(decoded.age, 25);
 }
@@ -207,7 +206,8 @@ fn test_unknown_fields_multiple_wire_types() {
     let original_bytes = Bytes::from(buf.clone());
 
     // Decode into minimal message (only tag 1 is known)
-    let minimal = MinimalWithUnknown::decode_message(original_bytes.clone()).expect("decode failed");
+    let minimal =
+        MinimalWithUnknown::decode_message(original_bytes.clone()).expect("decode failed");
 
     // Known field should be decoded
     assert_eq!(minimal.varint_field, 42);
@@ -236,19 +236,20 @@ fn test_unknown_fields_multiple_unknown_fields() {
     // Use MultiWireTypeMessage to test multiple unknown fields
     // MinimalWithUnknown knows tag 1 as varint, which matches MultiWireTypeMessage's tag 1
     let mut multi = MultiWireTypeMessage::default();
-    multi.varint_field = 123;  // tag 1 - known
-    multi.fixed64_field = protomon::codec::Fixed64(999);  // tag 2 - unknown
-    multi.string_field = ProtoString::from("test");  // tag 3 - unknown
-    multi.fixed32_field = protomon::codec::Fixed32(456);  // tag 4 - unknown
-    multi.sint32_field = protomon::codec::Sint32(-50);  // tag 5 - unknown
-    multi.bytes_field = protomon::codec::ProtoBytes::from(&[10u8, 20, 30][..]);  // tag 6 - unknown
+    multi.varint_field = 123; // tag 1 - known
+    multi.fixed64_field = protomon::codec::Fixed64(999); // tag 2 - unknown
+    multi.string_field = ProtoString::from("test"); // tag 3 - unknown
+    multi.fixed32_field = protomon::codec::Fixed32(456); // tag 4 - unknown
+    multi.sint32_field = protomon::codec::Sint32(-50); // tag 5 - unknown
+    multi.bytes_field = protomon::codec::ProtoBytes::from(&[10u8, 20, 30][..]); // tag 6 - unknown
 
     // Encode
     let mut buf = Vec::new();
     multi.encode_message(&mut buf);
 
     // Decode into message that only knows tag 1 (varint)
-    let minimal = MinimalWithUnknown::decode_message(Bytes::from(buf.clone())).expect("decode failed");
+    let minimal =
+        MinimalWithUnknown::decode_message(Bytes::from(buf.clone())).expect("decode failed");
 
     // Tag 1 should be decoded correctly
     assert_eq!(minimal.varint_field, 123);
@@ -286,12 +287,12 @@ fn test_unknown_fields_interleaved_with_known() {
     }
 
     let mut multi = MultiWireTypeMessage::default();
-    multi.varint_field = 42;  // tag 1 - will be unknown
-    multi.fixed64_field = protomon::codec::Fixed64(100);  // tag 2 - will be unknown
-    multi.string_field = ProtoString::from("middle_value");  // tag 3 - known
-    multi.fixed32_field = protomon::codec::Fixed32(200);  // tag 4 - will be unknown
-    multi.sint32_field = protomon::codec::Sint32(-10);  // tag 5 - will be unknown
-    multi.bytes_field = protomon::codec::ProtoBytes::from(&[5u8, 6, 7][..]);  // tag 6 - will be unknown
+    multi.varint_field = 42; // tag 1 - will be unknown
+    multi.fixed64_field = protomon::codec::Fixed64(100); // tag 2 - will be unknown
+    multi.string_field = ProtoString::from("middle_value"); // tag 3 - known
+    multi.fixed32_field = protomon::codec::Fixed32(200); // tag 4 - will be unknown
+    multi.sint32_field = protomon::codec::Sint32(-10); // tag 5 - will be unknown
+    multi.bytes_field = protomon::codec::ProtoBytes::from(&[5u8, 6, 7][..]); // tag 6 - will be unknown
 
     let mut buf = Vec::new();
     multi.encode_message(&mut buf);

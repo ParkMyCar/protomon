@@ -4,7 +4,7 @@
 use alloc::boxed::Box;
 
 use super::{ProtoDecode, ProtoEncode, ProtoType};
-use crate::error::DecodeErrorKind;
+use crate::error::DecodeError;
 use crate::wire::WireType;
 
 impl<T: ProtoType> ProtoType for Option<T> {
@@ -17,7 +17,7 @@ impl<T: ProtoDecode> ProtoDecode for Option<T> {
         buf: &mut B,
         dst: &mut Self,
         offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         let mut value = T::default();
         T::decode_into(buf, &mut value, offset)?;
         *dst = Some(value);
@@ -56,7 +56,7 @@ impl<T: ProtoDecode> ProtoDecode for Box<T> {
         buf: &mut B,
         dst: &mut Self,
         offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         T::decode_into(buf, dst.as_mut(), offset)
     }
 }

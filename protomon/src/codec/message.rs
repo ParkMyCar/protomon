@@ -4,7 +4,7 @@
 use alloc::vec::Vec;
 
 use super::{ProtoDecode, ProtoEncode, ProtoType};
-use crate::error::DecodeErrorKind;
+use crate::error::DecodeError;
 use crate::leb128::LebCodec;
 use crate::util::CastFrom;
 use crate::wire::WireType;
@@ -19,7 +19,7 @@ pub trait ProtoMessage: Sized + Default {
     ///
     /// Takes ownership of `Bytes` to allow zero-copy storage for repeated field iteration.
     /// Consumes all bytes in the buffer.
-    fn decode_message(buf: bytes::Bytes) -> Result<Self, DecodeErrorKind> {
+    fn decode_message(buf: bytes::Bytes) -> Result<Self, DecodeError> {
         let mut result = Self::default();
         Self::decode_message_into(buf, &mut result)?;
         Ok(result)
@@ -29,7 +29,7 @@ pub trait ProtoMessage: Sized + Default {
     ///
     /// This is the primary decode method - it decodes directly into `dst` without
     /// creating intermediate values.
-    fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), DecodeErrorKind>;
+    fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), DecodeError>;
 
     /// Encode the message body (without length prefix).
     fn encode_message<B: bytes::BufMut>(&self, buf: &mut B);
@@ -42,12 +42,10 @@ pub trait ProtoMessage: Sized + Default {
 ///
 /// This is the pattern generated code uses for nested message fields.
 #[inline]
-pub fn decode_message_field<T: ProtoMessage, B: bytes::Buf>(
-    buf: &mut B,
-) -> Result<T, DecodeErrorKind> {
+pub fn decode_message_field<T: ProtoMessage, B: bytes::Buf>(buf: &mut B) -> Result<T, DecodeError> {
     let len = crate::wire::decode_len(buf)?;
     if buf.remaining() < len {
-        return Err(DecodeErrorKind::unexpected_end_of_buffer());
+        return Err(DecodeError::unexpected_end_of_buffer());
     }
     let message_bytes = buf.copy_to_bytes(len);
     T::decode_message(message_bytes)
@@ -116,7 +114,7 @@ impl<T: ProtoMessage> LazyMessage<T> {
 
 impl<T: ProtoMessage> LazyMessage<T> {
     /// Decode the message. Can be called multiple times.
-    pub fn decode(&self) -> Result<T, DecodeErrorKind> {
+    pub fn decode(&self) -> Result<T, DecodeError> {
         T::decode_message(self.buf.clone())
     }
 }
@@ -132,10 +130,10 @@ impl<T: ProtoMessage> ProtoDecode for LazyMessage<T> {
         buf: &mut B,
         dst: &mut Self,
         _offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::unexpected_end_of_buffer());
+            return Err(DecodeError::unexpected_end_of_buffer());
         }
         *dst = LazyMessage::new(buf.copy_to_bytes(len));
         Ok(())
@@ -173,10 +171,10 @@ impl<T> core::fmt::Debug for LazyMessage<T> {
 ///
 /// Use this during message decoding to lazily skip nested messages.
 #[inline]
-pub fn skip_len_field<B: bytes::Buf>(buf: &mut B) -> Result<bytes::Bytes, DecodeErrorKind> {
+pub fn skip_len_field<B: bytes::Buf>(buf: &mut B) -> Result<bytes::Bytes, DecodeError> {
     let len = crate::wire::decode_len(buf)?;
     if buf.remaining() < len {
-        return Err(DecodeErrorKind::unexpected_end_of_buffer());
+        return Err(DecodeError::unexpected_end_of_buffer());
     }
     Ok(buf.copy_to_bytes(len))
 }
@@ -197,7 +195,7 @@ mod tests {
     }
 
     impl ProtoMessage for PhoneNumber {
-        fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), DecodeErrorKind> {
+        fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), DecodeError> {
             let mut slice = &buf[..];
 
             while slice.has_remaining() {
@@ -245,7 +243,7 @@ mod tests {
     }
 
     impl ProtoMessage for Person {
-        fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), DecodeErrorKind> {
+        fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), DecodeError> {
             let mut slice = &buf[..];
 
             while slice.has_remaining() {
@@ -338,7 +336,7 @@ mod tests {
     }
 
     impl PersonLazy {
-        fn decode(buf: bytes::Bytes) -> Result<Self, DecodeErrorKind> {
+        fn decode(buf: bytes::Bytes) -> Result<Self, DecodeError> {
             let mut slice = &buf[..];
             let mut name = ProtoString::default();
             let mut phone = None;
@@ -356,7 +354,7 @@ mod tests {
             Ok(PersonLazy { name, phone })
         }
 
-        fn phone(&self) -> Option<Result<PhoneNumber, DecodeErrorKind>> {
+        fn phone(&self) -> Option<Result<PhoneNumber, DecodeError>> {
             self.phone.as_ref().map(|lazy| lazy.decode())
         }
     }

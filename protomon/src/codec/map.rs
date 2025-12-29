@@ -35,7 +35,7 @@ use core::hash::Hash;
 use std::collections::HashMap;
 
 use super::{ProtoDecode, ProtoEncode, ProtoType};
-use crate::error::DecodeErrorKind;
+use crate::error::DecodeError;
 use crate::leb128::LebCodec;
 use crate::util::CastFrom;
 use crate::wire::{self, WireType};
@@ -69,7 +69,7 @@ pub trait ProtoMap: Default {
     /// Decode a single map entry and insert into the map.
     ///
     /// Implements "last one wins" semantics for duplicate keys.
-    fn decode_entry<B: bytes::Buf>(&mut self, buf: &mut B) -> Result<(), DecodeErrorKind>;
+    fn decode_entry<B: bytes::Buf>(&mut self, buf: &mut B) -> Result<(), DecodeError>;
 
     /// Encode all map entries with their field keys.
     fn encode_map<B: bytes::BufMut>(&self, tag: u32, buf: &mut B);
@@ -90,7 +90,7 @@ pub trait ProtoMap: Default {
 ///
 /// Map entries are encoded as: `<len><key_tag><key_value><value_tag><value_value>`
 /// where key_tag = (1 << 3) | key_wire_type and value_tag = (2 << 3) | value_wire_type.
-fn decode_map_entry<K, V, B>(buf: &mut B) -> Result<(K, V), DecodeErrorKind>
+fn decode_map_entry<K, V, B>(buf: &mut B) -> Result<(K, V), DecodeError>
 where
     K: ProtoMapKey + Default,
     V: ProtoType + ProtoDecode + Default,
@@ -101,7 +101,7 @@ where
     // Read the entry length
     let entry_len = wire::decode_len(buf)?;
     if buf.remaining() < entry_len {
-        return Err(DecodeErrorKind::unexpected_end_of_buffer());
+        return Err(DecodeError::unexpected_end_of_buffer());
     }
 
     // Create a sub-buffer for the entry
@@ -120,14 +120,14 @@ where
             1 => {
                 // Validate wire type matches key type
                 if wire_type != K::WIRE_TYPE {
-                    return Err(DecodeErrorKind::invalid_wire_type(wire_type.into_val()));
+                    return Err(DecodeError::invalid_wire_type(wire_type.into_val()));
                 }
                 K::decode_into(&mut entry_buf, &mut key, value_offset)?;
             }
             2 => {
                 // Validate wire type matches value type
                 if wire_type != V::WIRE_TYPE {
-                    return Err(DecodeErrorKind::invalid_wire_type(wire_type.into_val()));
+                    return Err(DecodeError::invalid_wire_type(wire_type.into_val()));
                 }
                 V::decode_into(&mut entry_buf, &mut value, value_offset)?;
             }
@@ -202,7 +202,7 @@ where
         buf: &mut B,
         dst: &mut Self,
         _offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         let (key, value) = decode_map_entry::<K, V, B>(buf)?;
         dst.insert(key, value);
         Ok(())
@@ -232,7 +232,7 @@ where
     V: ProtoType + ProtoDecode + ProtoEncode + Default,
 {
     #[inline]
-    fn decode_entry<B: bytes::Buf>(&mut self, buf: &mut B) -> Result<(), DecodeErrorKind> {
+    fn decode_entry<B: bytes::Buf>(&mut self, buf: &mut B) -> Result<(), DecodeError> {
         let (key, value) = decode_map_entry::<K, V, B>(buf)?;
         self.insert(key, value);
         Ok(())
@@ -280,7 +280,7 @@ where
         buf: &mut B,
         dst: &mut Self,
         _offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         let (key, value) = decode_map_entry::<K, V, B>(buf)?;
         dst.insert(key, value);
         Ok(())
@@ -311,7 +311,7 @@ where
     V: ProtoType + ProtoDecode + ProtoEncode + Default,
 {
     #[inline]
-    fn decode_entry<B: bytes::Buf>(&mut self, buf: &mut B) -> Result<(), DecodeErrorKind> {
+    fn decode_entry<B: bytes::Buf>(&mut self, buf: &mut B) -> Result<(), DecodeError> {
         let (key, value) = decode_map_entry::<K, V, B>(buf)?;
         self.insert(key, value);
         Ok(())

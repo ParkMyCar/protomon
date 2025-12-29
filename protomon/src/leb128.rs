@@ -5,7 +5,7 @@
 
 use core::num::NonZeroU8;
 
-use crate::error::DecodeErrorKind;
+use crate::error::DecodeError;
 
 /// Types that can be decoded from a LEB128 encoded integer.
 pub trait LebCodec: Sized {
@@ -49,13 +49,13 @@ pub trait LebCodec: Sized {
     }
 
     /// Decode a LEB128 variable from a `Buf`, returning `Result` for error context.
-    fn decode_leb128_buf<B: bytes::Buf>(buf: &mut B) -> Result<(Self, NonZeroU8), DecodeErrorKind> {
+    fn decode_leb128_buf<B: bytes::Buf>(buf: &mut B) -> Result<(Self, NonZeroU8), DecodeError> {
         let chunk = buf.chunk();
 
         // Fast path: current chunk has enough bytes for direct decode.
         if chunk.len() >= Self::MAX_LEB_BYTES as usize {
             let (value, bytes_read) = unsafe { Self::decode_leb128(chunk.as_ptr()) }
-                .ok_or_else(DecodeErrorKind::invalid_varint)?;
+                .ok_or_else(DecodeError::invalid_varint)?;
             buf.advance(bytes_read.get() as usize);
             return Ok((value, bytes_read));
         }
@@ -64,15 +64,15 @@ pub trait LebCodec: Sized {
         let mut buffer = [0u8; 16];
         for i in 0..Self::MAX_LEB_BYTES as usize {
             if !buf.has_remaining() {
-                return Err(DecodeErrorKind::invalid_varint());
+                return Err(DecodeError::invalid_varint());
             }
             buffer[i] = buf.get_u8();
             if buffer[i] < 0x80 {
                 return unsafe { Self::decode_leb128(buffer.as_ptr()) }
-                    .ok_or_else(DecodeErrorKind::invalid_varint);
+                    .ok_or_else(DecodeError::invalid_varint);
             }
         }
-        Err(DecodeErrorKind::invalid_varint())
+        Err(DecodeError::invalid_varint())
     }
 
     /// Encode `self` as a LEB128 variable length integer into the provided

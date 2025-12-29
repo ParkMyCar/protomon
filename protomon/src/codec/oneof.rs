@@ -34,7 +34,7 @@
 //! }
 //! ```
 
-use crate::error::DecodeErrorKind;
+use crate::error::DecodeError;
 use crate::wire::WireType;
 
 /// Trait for protobuf oneof types.
@@ -67,7 +67,7 @@ pub trait ProtoOneof: Sized {
         wire_type: WireType,
         buf: &mut B,
         offset: usize,
-    ) -> Result<Option<Self>, DecodeErrorKind>;
+    ) -> Result<Option<Self>, DecodeError>;
 
     /// Encode this oneof variant to the buffer.
     ///
@@ -95,7 +95,7 @@ pub fn decode_oneof_field<T: ProtoOneof, B: bytes::Buf>(
     wire_type: WireType,
     buf: &mut B,
     offset: usize,
-) -> Result<bool, DecodeErrorKind> {
+) -> Result<bool, DecodeError> {
     match T::decode_variant(tag, wire_type, buf, offset)? {
         Some(value) => {
             *dst = Some(value);
@@ -151,11 +151,11 @@ mod tests {
             wire_type: WireType,
             buf: &mut B,
             offset: usize,
-        ) -> Result<Option<Self>, DecodeErrorKind> {
+        ) -> Result<Option<Self>, DecodeError> {
             match tag {
                 1 => {
                     if wire_type != <i32 as ProtoType>::WIRE_TYPE {
-                        return Err(DecodeErrorKind::invalid_wire_type(wire_type.into_val()));
+                        return Err(DecodeError::invalid_wire_type(wire_type.into_val()));
                     }
                     let mut value = i32::default();
                     i32::decode_into(buf, &mut value, offset)?;
@@ -163,7 +163,7 @@ mod tests {
                 }
                 2 => {
                     if wire_type != <ProtoString as ProtoType>::WIRE_TYPE {
-                        return Err(DecodeErrorKind::invalid_wire_type(wire_type.into_val()));
+                        return Err(DecodeError::invalid_wire_type(wire_type.into_val()));
                     }
                     let mut value = ProtoString::default();
                     ProtoString::decode_into(buf, &mut value, offset)?;
@@ -171,7 +171,7 @@ mod tests {
                 }
                 3 => {
                     if wire_type != <bool as ProtoType>::WIRE_TYPE {
-                        return Err(DecodeErrorKind::invalid_wire_type(wire_type.into_val()));
+                        return Err(DecodeError::invalid_wire_type(wire_type.into_val()));
                     }
                     let mut value = bool::default();
                     bool::decode_into(buf, &mut value, offset)?;

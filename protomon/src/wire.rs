@@ -1,6 +1,6 @@
 //! Wire format for Google's Protocol Buffers, aka [protobuf](https://protobuf.dev).
 
-use crate::error::{DecodeError, DecodeErrorKind};
+use crate::error::{DecodeError, InvalidKeyReason};
 use crate::leb128::LebCodec;
 use crate::util::CastFrom;
 use crate::util::{likely, unlikely};
@@ -42,7 +42,7 @@ pub fn encoded_key_len(tag: u32) -> usize {
 /// for every field in every message. We use `#[inline(always)]` to ensure
 /// the compiler inlines this at every call site for maximum performance.
 #[inline(always)]
-pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeErrorKind> {
+pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeError> {
     let chunk = buf.chunk();
     let chunk_len = chunk.len();
 
@@ -52,10 +52,10 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
     // max key value is `(2^29-1) << 3 | 7` which is `u32::MAX`.
     // N.B We hint to the compiler the likely paths for better optimization.
     let value = if unlikely(chunk_len == 0) {
-        return Err(DecodeError::invalid_key("empty buffer"));
+        return Err(DecodeError::invalid_key(InvalidKeyReason::EmptyBuffer));
     } else if likely(chunk[0] < 0x80 || chunk_len >= 5) {
         let (value, bytes_read) = unsafe { u32::decode_leb128(chunk.as_ptr()) }
-            .ok_or_else(DecodeErrorKind::invalid_varint)?;
+            .ok_or_else(DecodeError::invalid_varint)?;
         buf.advance(usize::cast_from(bytes_read.get()));
         value
     } else {
@@ -72,7 +72,7 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
 
     // Validate tag is in valid range (1 to 2^29-1)
     if unlikely(tag == 0 || tag > MAXIMUM_TAG_VAL) {
-        return Err(DecodeError::invalid_key("tag out of range"));
+        return Err(DecodeError::invalid_key(InvalidKeyReason::TagOutOfRange));
     }
 
     Ok((wire_type, tag))
@@ -80,7 +80,7 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<(WireType, u32), DecodeE
 
 /// Decodes the length prefix for a length-delimited field.
 #[inline(always)]
-pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeErrorKind> {
+pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeError> {
     let chunk = buf.chunk();
     // Fast path, most lengths fit in one byte (< 128).
     if likely(!chunk.is_empty() && chunk[0] < 0x80) {
@@ -89,7 +89,7 @@ pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeErrorKind> 
         Ok(len)
     } else {
         let (len, _) = u64::decode_leb128_buf(buf)?;
-        usize::try_from(len).map_err(|_| DecodeErrorKind::length_overflow(len))
+        usize::try_from(len).map_err(|_| DecodeError::length_overflow(len))
     }
 }
 
@@ -101,7 +101,7 @@ pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeErrorKind> 
 /// This is on the hot path for message decoding - called for unknown fields
 /// and during lazy repeated field iteration.
 #[inline(always)]
-pub fn skip_field<B: bytes::Buf>(wire_type: WireType, buf: &mut B) -> Result<(), DecodeErrorKind> {
+pub fn skip_field<B: bytes::Buf>(wire_type: WireType, buf: &mut B) -> Result<(), DecodeError> {
     let skip_len = match wire_type {
         WireType::Varint => {
             // Read and discard the varint (decode_leb128_buf advances the buffer)
@@ -112,12 +112,12 @@ pub fn skip_field<B: bytes::Buf>(wire_type: WireType, buf: &mut B) -> Result<(),
         WireType::Len => decode_len(buf)?,
         WireType::I32 => 4,
         WireType::SGroup | WireType::EGroup => {
-            return Err(DecodeErrorKind::deprecated_group_encoding());
+            return Err(DecodeError::deprecated_group_encoding());
         }
     };
 
     if buf.remaining() < skip_len {
-        return Err(DecodeErrorKind::unexpected_end_of_buffer());
+        return Err(DecodeError::unexpected_end_of_buffer());
     }
     buf.advance(skip_len);
     Ok(())
@@ -177,7 +177,7 @@ impl WireType {
 
     /// Try to decode a [`WireType`] from the provided raw value.
     #[inline(always)]
-    fn try_from_val(value: u8) -> Result<Self, DecodeErrorKind> {
+    fn try_from_val(value: u8) -> Result<Self, DecodeError> {
         if value <= Self::MAX_VAL {
             // SAFETY:
             //
@@ -198,10 +198,10 @@ impl WireType {
 }
 
 impl TryFrom<u8> for WireType {
-    type Error = DecodeErrorKind;
+    type Error = DecodeError;
 
     #[inline(always)]
-    fn try_from(value: u8) -> Result<Self, DecodeErrorKind> {
+    fn try_from(value: u8) -> Result<Self, DecodeError> {
         WireType::try_from_val(value)
     }
 }

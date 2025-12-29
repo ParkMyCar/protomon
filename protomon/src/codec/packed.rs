@@ -11,7 +11,7 @@ use core::marker::PhantomData;
 use crate::codec::{
     Fixed32, Fixed64, ProtoDecode, ProtoEncode, ProtoType, Sfixed32, Sfixed64, Sint32, Sint64,
 };
-use crate::error::DecodeErrorKind;
+use crate::error::DecodeError;
 use crate::leb128::LebCodec;
 use crate::util::{CastFrom, TruncatingCastFrom};
 use crate::wire::WireType;
@@ -149,7 +149,7 @@ impl<T: ProtoDecode + Default> ProtoPacked<T> {
 impl<T: PackedDecode> ProtoPacked<T> {
     /// Decode all values into the provided Vec (fastest method).
     #[inline]
-    pub fn decode_into(&self, dst: &mut Vec<T>) -> Result<(), DecodeErrorKind> {
+    pub fn decode_into(&self, dst: &mut Vec<T>) -> Result<(), DecodeError> {
         for chunk in &self.chunks {
             T::decode_packed_into(chunk, dst)?;
         }
@@ -158,7 +158,7 @@ impl<T: PackedDecode> ProtoPacked<T> {
 
     /// Decode all values into a new Vec.
     #[inline]
-    pub fn decode(&self) -> Result<Vec<T>, DecodeErrorKind> {
+    pub fn decode(&self) -> Result<Vec<T>, DecodeError> {
         let mut result = Vec::with_capacity(self.byte_len() / 2);
         self.decode_into(&mut result)?;
         Ok(result)
@@ -178,11 +178,11 @@ impl<T: ProtoType> ProtoDecode for ProtoPacked<T> {
         buf: &mut B,
         dst: &mut Self,
         _offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         use bytes::Buf;
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::unexpected_end_of_buffer());
+            return Err(DecodeError::unexpected_end_of_buffer());
         }
         let chunk = buf.copy_to_bytes(len);
         dst.push_chunk(chunk);
@@ -256,7 +256,7 @@ pub struct ProtoPackedIter<'a, T> {
 }
 
 impl<'a, T: ProtoDecode + Default> Iterator for ProtoPackedIter<'a, T> {
-    type Item = Result<T, DecodeErrorKind>;
+    type Item = Result<T, DecodeError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.chunk_idx < self.chunks.len() {
@@ -286,10 +286,10 @@ impl<'a, T: ProtoDecode + Default> Iterator for ProtoPackedIter<'a, T> {
 /// Trait for types that can be batch-decoded from packed format.
 pub trait PackedDecode: Sized + Default + Clone {
     /// Decode all packed elements into a vector.
-    fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeErrorKind>;
+    fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeError>;
 
     /// Decode all packed elements and return them as a new vector.
-    fn decode_packed(data: &[u8]) -> Result<Vec<Self>, DecodeErrorKind>;
+    fn decode_packed(data: &[u8]) -> Result<Vec<Self>, DecodeError>;
 }
 
 trait PackedElement: Sized + Copy {
@@ -306,12 +306,12 @@ macro_rules! impl_packed_fixed_4byte {
 
         impl PackedDecode for $ty {
             #[inline]
-            fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeErrorKind> {
+            fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeError> {
                 decode_packed_4byte(data, dst)
             }
 
             #[inline]
-            fn decode_packed(data: &[u8]) -> Result<Vec<Self>, DecodeErrorKind> {
+            fn decode_packed(data: &[u8]) -> Result<Vec<Self>, DecodeError> {
                 let mut result = Vec::with_capacity(data.len() / 4);
                 decode_packed_4byte(data, &mut result)?;
                 Ok(result)
@@ -330,12 +330,12 @@ macro_rules! impl_packed_fixed_8byte {
 
         impl PackedDecode for $ty {
             #[inline]
-            fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeErrorKind> {
+            fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeError> {
                 decode_packed_8byte(data, dst)
             }
 
             #[inline]
-            fn decode_packed(data: &[u8]) -> Result<Vec<Self>, DecodeErrorKind> {
+            fn decode_packed(data: &[u8]) -> Result<Vec<Self>, DecodeError> {
                 let mut result = Vec::with_capacity(data.len() / 8);
                 decode_packed_8byte(data, &mut result)?;
                 Ok(result)
@@ -363,13 +363,10 @@ impl_packed_fixed_8byte! {
 /// 2. Better utilize 64-byte cache lines (half a cache line per iteration)
 /// 3. Give the CPU more opportunity for instruction-level parallelism
 #[inline]
-fn decode_packed_4byte<T: PackedElement>(
-    data: &[u8],
-    dst: &mut Vec<T>,
-) -> Result<(), DecodeErrorKind> {
+fn decode_packed_4byte<T: PackedElement>(data: &[u8], dst: &mut Vec<T>) -> Result<(), DecodeError> {
     let len = data.len();
     if len % 4 != 0 {
-        return Err(DecodeErrorKind::invalid_packed_length(
+        return Err(DecodeError::invalid_packed_length(
             4,
             u32::truncating_cast_from(len),
         ));
@@ -414,13 +411,10 @@ fn decode_packed_4byte<T: PackedElement>(
 /// 2. Better utilize 64-byte cache lines (half a cache line per iteration)
 /// 3. Give the CPU more opportunity for instruction-level parallelism
 #[inline]
-fn decode_packed_8byte<T: PackedElement>(
-    data: &[u8],
-    dst: &mut Vec<T>,
-) -> Result<(), DecodeErrorKind> {
+fn decode_packed_8byte<T: PackedElement>(data: &[u8], dst: &mut Vec<T>) -> Result<(), DecodeError> {
     let len = data.len();
     if len % 8 != 0 {
-        return Err(DecodeErrorKind::invalid_packed_length(
+        return Err(DecodeError::invalid_packed_length(
             8,
             u32::truncating_cast_from(len),
         ));
@@ -471,7 +465,7 @@ fn decode_packed_varint<T, L: LebCodec, F>(
     data: &[u8],
     dst: &mut Vec<T>,
     convert: F,
-) -> Result<(), DecodeErrorKind>
+) -> Result<(), DecodeError>
 where
     F: Fn(L) -> T,
 {
@@ -480,14 +474,14 @@ where
 
     while offset + usize::cast_from(L::MAX_LEB_BYTES) <= len {
         let (value, bytes_read) = unsafe { L::decode_leb128(data.as_ptr().add(offset)) }
-            .ok_or_else(DecodeErrorKind::invalid_varint)?;
+            .ok_or_else(DecodeError::invalid_varint)?;
         dst.push(convert(value));
         offset += usize::cast_from(bytes_read.get());
     }
 
     while offset < len {
         let (value, bytes_read) =
-            L::decode_leb128_safe(&data[offset..]).ok_or_else(DecodeErrorKind::invalid_varint)?;
+            L::decode_leb128_safe(&data[offset..]).ok_or_else(DecodeError::invalid_varint)?;
         dst.push(convert(value));
         offset += usize::cast_from(bytes_read.get());
     }
@@ -499,12 +493,12 @@ macro_rules! impl_packed_varint {
         impl PackedDecode for $ty {
             #[inline]
             #[allow(clippy::as_conversions)]
-            fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeErrorKind> {
+            fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeError> {
                 decode_packed_varint::<$ty, $leb, _>(data, dst, $convert)
             }
 
             #[inline]
-            fn decode_packed(data: &[u8]) -> Result<Vec<Self>, DecodeErrorKind> {
+            fn decode_packed(data: &[u8]) -> Result<Vec<Self>, DecodeError> {
                 let mut result = Vec::with_capacity(data.len() / $cap_div);
                 Self::decode_packed_into(data, &mut result)?;
                 Ok(result)
@@ -522,14 +516,14 @@ impl_packed_varint!(bool, u64, 1, |v: u64| v != 0);
 #[allow(clippy::as_conversions)]
 impl PackedDecode for Sint32 {
     #[inline]
-    fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeErrorKind> {
+    fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeError> {
         decode_packed_varint::<Sint32, u32, _>(data, dst, |v| {
             Sint32(((v >> 1) as i32) ^ -((v & 1) as i32))
         })
     }
 
     #[inline]
-    fn decode_packed(data: &[u8]) -> Result<Vec<Self>, DecodeErrorKind> {
+    fn decode_packed(data: &[u8]) -> Result<Vec<Self>, DecodeError> {
         let mut result = Vec::with_capacity(data.len() / 2);
         Self::decode_packed_into(data, &mut result)?;
         Ok(result)
@@ -539,14 +533,14 @@ impl PackedDecode for Sint32 {
 #[allow(clippy::as_conversions)]
 impl PackedDecode for Sint64 {
     #[inline]
-    fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeErrorKind> {
+    fn decode_packed_into(data: &[u8], dst: &mut Vec<Self>) -> Result<(), DecodeError> {
         decode_packed_varint::<Sint64, u64, _>(data, dst, |v| {
             Sint64(((v >> 1) as i64) ^ -((v & 1) as i64))
         })
     }
 
     #[inline]
-    fn decode_packed(data: &[u8]) -> Result<Vec<Self>, DecodeErrorKind> {
+    fn decode_packed(data: &[u8]) -> Result<Vec<Self>, DecodeError> {
         let mut result = Vec::with_capacity(data.len() / 2);
         Self::decode_packed_into(data, &mut result)?;
         Ok(result)

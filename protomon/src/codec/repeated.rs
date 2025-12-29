@@ -3,7 +3,7 @@
 use alloc::vec::Vec;
 
 use super::{ProtoDecode, ProtoEncode, ProtoType};
-use crate::error::DecodeErrorKind;
+use crate::error::{DecodeError, ProgrammingErrorReason};
 use crate::util::CastFrom;
 use crate::wire::{self, WireType};
 
@@ -190,7 +190,7 @@ impl<T: ProtoDecode + Default + Clone + 'static> Repeated<T> {
 }
 
 impl<'a, T: ProtoDecode + Default + Clone + 'static> IntoIterator for &'a Repeated<T> {
-    type Item = Result<T, DecodeErrorKind>;
+    type Item = Result<T, DecodeError>;
     type IntoIter = RepeatedIter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -229,7 +229,7 @@ impl<T: ProtoType + 'static> ProtoDecode for Repeated<T> {
         buf: &mut B,
         dst: &mut Self,
         offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         let Self::Lazy {
             buf: msg_buf,
             offsets,
@@ -237,15 +237,15 @@ impl<T: ProtoType + 'static> ProtoDecode for Repeated<T> {
             ..
         } = dst
         else {
-            return Err(DecodeErrorKind::programming_error(
-                "decode_into is not supported on Owned variant",
+            return Err(DecodeError::programming_error(
+                ProgrammingErrorReason::DecodeIntoOwnedNotSupported,
             ));
         };
 
         // Check that init_repeated was called
         if msg_buf.is_empty() {
-            return Err(DecodeErrorKind::programming_error(
-                "Repeated::init_repeated must be called before decode_into",
+            return Err(DecodeError::programming_error(
+                ProgrammingErrorReason::InitRepeatedNotCalled,
             ));
         }
 
@@ -365,7 +365,7 @@ pub enum RepeatedIter<'a, T: 'static> {
 }
 
 impl<T: ProtoDecode + Default + Clone + 'static> Iterator for RepeatedIter<'_, T> {
-    type Item = Result<T, DecodeErrorKind>;
+    type Item = Result<T, DecodeError>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -410,7 +410,7 @@ impl<'a, T> RepeatedDecodeIter<'a, T> {
 }
 
 impl<T: ProtoDecode + Default> Iterator for RepeatedDecodeIter<'_, T> {
-    type Item = Result<T, DecodeErrorKind>;
+    type Item = Result<T, DecodeError>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -444,7 +444,7 @@ impl<T: ProtoDecode> ProtoDecode for Vec<T> {
         buf: &mut B,
         dst: &mut Self,
         offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         let mut value = T::default();
         T::decode_into(buf, &mut value, offset)?;
         dst.push(value);
@@ -516,7 +516,7 @@ pub fn decode_repeated_into<T, B>(
     buf: &mut B,
     dst: &mut Vec<T>,
     _offset: usize,
-) -> Result<(), DecodeErrorKind>
+) -> Result<(), DecodeError>
 where
     T: ProtoType + ProtoDecode + Default,
     B: bytes::Buf,
@@ -526,7 +526,7 @@ where
         // Packed encoding - decode length, then decode all values
         let len = wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::unexpected_end_of_buffer());
+            return Err(DecodeError::unexpected_end_of_buffer());
         }
         // Read the packed data into a slice and decode values
         let data = buf.copy_to_bytes(len);

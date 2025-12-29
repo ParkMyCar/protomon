@@ -6,7 +6,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use super::{ProtoDecode, ProtoEncode, ProtoType};
-use crate::error::DecodeErrorKind;
+use crate::error::DecodeError;
 use crate::leb128::LebCodec;
 use crate::util::CastFrom;
 use crate::wire::WireType;
@@ -44,10 +44,10 @@ impl ProtoDecode for ProtoBytes {
         buf: &mut B,
         dst: &mut Self,
         _offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::unexpected_end_of_buffer());
+            return Err(DecodeError::unexpected_end_of_buffer());
         }
         *dst = ProtoBytes(buf.copy_to_bytes(len));
         Ok(())
@@ -121,16 +121,16 @@ impl ProtoDecode for ProtoString {
         buf: &mut B,
         dst: &mut Self,
         _offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::unexpected_end_of_buffer());
+            return Err(DecodeError::unexpected_end_of_buffer());
         }
         let data = buf.copy_to_bytes(len);
 
         // Validate UTF-8.
         if core::str::from_utf8(&data).is_err() {
-            return Err(DecodeErrorKind::invalid_utf8());
+            return Err(DecodeError::invalid_utf8());
         }
         *dst = ProtoString(data);
 
@@ -166,10 +166,10 @@ impl ProtoDecode for String {
         buf: &mut B,
         dst: &mut Self,
         _offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::unexpected_end_of_buffer());
+            return Err(DecodeError::unexpected_end_of_buffer());
         }
 
         // Use a guard to safely handle uninitialized memory.
@@ -206,7 +206,7 @@ impl ProtoDecode for String {
             Ok(_) => core::mem::forget(guard),
             // Invalid, the drop guard will clear the memory.
             Err(_) => {
-                return Err(DecodeErrorKind::invalid_utf8());
+                return Err(DecodeError::invalid_utf8());
             }
         }
 
@@ -243,10 +243,10 @@ impl ProtoDecode for Vec<u8> {
         buf: &mut B,
         dst: &mut Self,
         _offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         let len = crate::wire::decode_len(buf)?;
         if buf.remaining() < len {
-            return Err(DecodeErrorKind::unexpected_end_of_buffer());
+            return Err(DecodeError::unexpected_end_of_buffer());
         }
 
         // Use a guard to safely handle uninitialized memory.
@@ -303,13 +303,13 @@ where
         buf: &mut B,
         dst: &mut Self,
         _offset: usize,
-    ) -> Result<(), DecodeErrorKind> {
+    ) -> Result<(), DecodeError> {
         let len = crate::wire::decode_len(buf)?;
         if len != N {
-            return Err(DecodeErrorKind::length_mismatch(N, len));
+            return Err(DecodeError::length_mismatch(N, len));
         }
         if buf.remaining() < N {
-            return Err(DecodeErrorKind::unexpected_end_of_buffer());
+            return Err(DecodeError::unexpected_end_of_buffer());
         }
         buf.copy_to_slice(dst);
         Ok(())
@@ -332,7 +332,7 @@ impl<const N: usize> ProtoEncode for [u8; N] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::DecodeErrorInner;
+    use crate::error::ErrorKind;
     use alloc::vec;
 
     fn roundtrip<T: ProtoEncode + ProtoDecode + PartialEq + core::fmt::Debug + Default>(value: T) {
@@ -473,13 +473,8 @@ mod tests {
         let mut decoded = [0u8; 3];
         let result = <[u8; 3] as ProtoDecode>::decode_into(&mut &buf[..], &mut decoded, 0);
         let err = result.unwrap_err();
-        assert!(matches!(
-            err.kind(),
-            DecodeErrorInner::LengthMismatch {
-                expected: 3,
-                actual: 5
-            }
-        ));
+        assert_eq!(err.kind(), ErrorKind::LengthMismatch);
+        assert_eq!(err.length_mismatch_values(), Some((3, 5)));
     }
 
     #[test]

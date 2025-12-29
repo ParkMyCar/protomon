@@ -142,11 +142,11 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
                 buf: &mut B,
                 dst: &mut Self,
                 _offset: usize,
-            ) -> Result<(), protomon::error::DecodeErrorKind> {
+            ) -> Result<(), protomon::error::DecodeError> {
                 use bytes::Buf;
                 let len = protomon::wire::decode_len(buf)?;
                 if buf.remaining() < len {
-                    return Err(protomon::error::DecodeErrorKind::unexpected_end_of_buffer());
+                    return Err(protomon::error::DecodeError::unexpected_end_of_buffer());
                 }
                 <Self as protomon::codec::ProtoMessage>::decode_message_into(buf.copy_to_bytes(len), dst)?;
                 Ok(())
@@ -267,9 +267,9 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
                 let tags: Result<Vec<u32>> = tags_str
                     .split(',')
                     .map(|s| {
-                        let parsed_tag = s.trim()
-                            .parse::<u32>()
-                            .map_err(|_| syn::Error::new_spanned(field, "invalid tag in tags list"))?;
+                        let parsed_tag = s.trim().parse::<u32>().map_err(|_| {
+                            syn::Error::new_spanned(field, "invalid tag in tags list")
+                        })?;
                         validate_tag(parsed_tag, field.span())?;
                         Ok(parsed_tag)
                     })
@@ -444,7 +444,10 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
     });
 
     // Collect oneof fields, separating required from optional
-    let oneof_fields: Vec<&&FieldInfo> = regular_fields.iter().filter(|f| f.oneof_tags.is_some()).collect();
+    let oneof_fields: Vec<&&FieldInfo> = regular_fields
+        .iter()
+        .filter(|f| f.oneof_tags.is_some())
+        .collect();
     let (required_oneof_fields, optional_oneof_fields): (Vec<&&FieldInfo>, Vec<&&FieldInfo>) =
         oneof_fields.into_iter().partition(|f| f.oneof_required);
 
@@ -549,10 +552,11 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
     let required_oneof_validations = required_oneof_fields.iter().map(|f| {
         let fname = f.name;
         let temp_name = format_ident!("__oneof_{}", fname);
-        let field_name_str = fname.to_string();
+        // Use the first tag in the oneof as the identifying tag for errors
+        let first_tag = f.oneof_tags.as_ref().unwrap()[0];
 
         quote! {
-            dst.#fname = #temp_name.ok_or_else(|| protomon::error::DecodeErrorKind::missing_required_oneof(#field_name_str))?;
+            dst.#fname = #temp_name.ok_or_else(|| protomon::error::DecodeError::missing_required_oneof(#first_tag))?;
         }
     });
 
@@ -576,7 +580,7 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
                     protomon::wire::WireType::I64 => {
                         // Copy 8 bytes directly without intermediate Bytes allocation
                         if buf.remaining() < 8 {
-                            return Err(protomon::error::DecodeErrorKind::unexpected_end_of_buffer());
+                            return Err(protomon::error::DecodeError::unexpected_end_of_buffer());
                         }
                         unknown_buf.extend_from_slice(&buf.chunk()[..8]);
                         buf.advance(8);
@@ -588,7 +592,7 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
                         (len as u64).encode_leb128(&mut unknown_buf);
                         // Copy the data directly without intermediate Bytes allocation
                         if buf.remaining() < len {
-                            return Err(protomon::error::DecodeErrorKind::unexpected_end_of_buffer());
+                            return Err(protomon::error::DecodeError::unexpected_end_of_buffer());
                         }
                         unknown_buf.extend_from_slice(&buf.chunk()[..len]);
                         buf.advance(len);
@@ -596,13 +600,13 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
                     protomon::wire::WireType::I32 => {
                         // Copy 4 bytes directly without intermediate Bytes allocation
                         if buf.remaining() < 4 {
-                            return Err(protomon::error::DecodeErrorKind::unexpected_end_of_buffer());
+                            return Err(protomon::error::DecodeError::unexpected_end_of_buffer());
                         }
                         unknown_buf.extend_from_slice(&buf.chunk()[..4]);
                         buf.advance(4);
                     }
                     protomon::wire::WireType::SGroup | protomon::wire::WireType::EGroup => {
-                        return Err(protomon::error::DecodeErrorKind::deprecated_group_encoding());
+                        return Err(protomon::error::DecodeError::deprecated_group_encoding());
                     }
                 }
             }
@@ -625,7 +629,7 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
 
     quote! {
         #[inline(always)]
-        fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), protomon::error::DecodeErrorKind> {
+        fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), protomon::error::DecodeError> {
             use bytes::Buf;
             use protomon::codec::ProtoDecode;
             use protomon::wire::{decode_key, skip_field};
@@ -957,7 +961,7 @@ fn generate_oneof_decode(enum_name: &Ident, variants: &[OneofVariantInfo]) -> To
         quote! {
             #tag => {
                 if wire_type != <#vty as protomon::codec::ProtoType>::WIRE_TYPE {
-                    return Err(protomon::error::DecodeErrorKind::invalid_wire_type(wire_type as u8));
+                    return Err(protomon::error::DecodeError::invalid_wire_type(wire_type as u8));
                 }
                 let mut value = <#vty as ::core::default::Default>::default();
                 <#vty as protomon::codec::ProtoDecode>::decode_into(buf, &mut value, offset)?;
@@ -972,7 +976,7 @@ fn generate_oneof_decode(enum_name: &Ident, variants: &[OneofVariantInfo]) -> To
             wire_type: protomon::wire::WireType,
             buf: &mut B,
             offset: usize,
-        ) -> Result<Option<Self>, protomon::error::DecodeErrorKind> {
+        ) -> Result<Option<Self>, protomon::error::DecodeError> {
             match tag {
                 #(#decode_arms)*
                 _ => Ok(None),

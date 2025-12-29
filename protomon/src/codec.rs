@@ -13,7 +13,7 @@ mod repeated;
 mod scalar;
 mod wrappers;
 
-use crate::error::DecodeErrorKind;
+use crate::error::DecodeError;
 use crate::wire::WireType;
 
 pub trait ProtoType: Sized {
@@ -34,7 +34,7 @@ pub trait ProtoDecode: ProtoType + Default {
         buf: &mut B,
         dst: &mut Self,
         offset: usize,
-    ) -> Result<(), DecodeErrorKind>;
+    ) -> Result<(), DecodeError>;
 }
 
 /// A type that can be encoded to protobuf wire format.
