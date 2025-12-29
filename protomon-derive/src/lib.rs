@@ -207,7 +207,7 @@ fn validate_tag(tag: u32, span: proc_macro2::Span) -> Result<()> {
         ));
     }
 
-    if tag >= RESERVED_START && tag <= RESERVED_END {
+    if (RESERVED_START..=RESERVED_END).contains(&tag) {
         return Err(syn::Error::new(
             span,
             format!(
