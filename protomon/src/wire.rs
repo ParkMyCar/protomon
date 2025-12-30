@@ -89,8 +89,12 @@ impl core::fmt::Debug for ProtoKey {
 /// Follows the specification from <https://protobuf.dev/programming-guides/encoding>
 /// under the "Message Structure" section.
 ///
-/// Hot path for encoding - called for every field in every message.
-#[inline(always)]
+/// # Performance
+///
+/// Hot path for encoding, called for every field in every message. This method
+/// signature is very carefully written to ensure arguments are passed entirely
+/// in registers.
+#[inline]
 pub fn encode_key<B: bytes::BufMut>(wire_type: WireType, tag: u32, buf: &mut B) {
     let key = (tag << 3) | u32::cast_from(wire_type.into_val());
     u32::encode_leb128(key, buf);
@@ -98,8 +102,12 @@ pub fn encode_key<B: bytes::BufMut>(wire_type: WireType, tag: u32, buf: &mut B) 
 
 /// Returns the encoded length of a field key (tag + wire type).
 ///
-/// Called frequently during encoded_len() calculations.
-#[inline(always)]
+/// # Performance
+///
+/// Called frequently during `encoded_len()` calculations. This method signature
+/// is very carefully written to ensure arguments and return values are passed
+/// entirely in registers.
+#[inline]
 pub fn encoded_key_len(tag: u32) -> usize {
     // Wire type is 3 bits, so key = (tag << 3) | wire_type
     // The wire type doesn't affect the length since it only uses 3 bits
@@ -114,7 +122,7 @@ pub fn encoded_key_len(tag: u32) -> usize {
 ///
 /// # Performance
 ///
-/// This is one of the hottest functions in the decode path - it's called for every field
+/// This is one of the hottest functions in the decode path, it's called for every field
 /// in every message. This method signature is very carefully written to ensure arguments
 /// and return values are passed entirely in registers instead of on the stack.
 ///
@@ -145,7 +153,12 @@ pub fn decode_key<B: bytes::Buf>(buf: &mut B) -> Result<ProtoKey, DecodeError> {
 }
 
 /// Decodes the length prefix for a length-delimited field.
-#[inline(always)]
+///
+/// # Performance
+///
+/// This method signature is very carefully written to ensure arguments and return values
+/// are passed entirely in registers instead of on the stack.
+#[inline]
 pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeError> {
     let chunk = buf.chunk();
     // Fast path, most lengths fit in one byte (< 128).
@@ -161,12 +174,14 @@ pub fn decode_len<B: bytes::Buf>(buf: &mut B) -> Result<usize, DecodeError> {
 
 /// Skips over a field value based on its wire type.
 ///
-/// Protobuf supports backwards and fowards compatiblity by skipping fields
+/// Protobuf supports backwards and forwards compatibility by skipping fields
 /// we don't know about. We "skip" a field by advancing our buffer past it.
 ///
-/// This is on the hot path for message decoding - called for unknown fields
-/// and during lazy repeated field iteration.
-#[inline(always)]
+/// # Performance
+///
+/// This method signature is very carefully written to ensure arguments and return values
+/// are passed entirely in registers instead of on the stack.
+#[inline]
 pub fn skip_field<B: bytes::Buf>(wire_type: WireType, buf: &mut B) -> Result<(), DecodeError> {
     let skip_len = match wire_type {
         WireType::Varint => {
