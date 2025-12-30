@@ -16,8 +16,8 @@ pub const MAXIMUM_TAG_VAL: u32 = (1 << 29) - 1;
 ///
 /// Packed into a [`NonZeroU64`] to enable register-based returns from
 /// [`decode_key`]. In an ideal world this type would use `NonZeroU32` which
-/// better resembles a protobuf key. But when used in a Result `rustc` passes
-/// this return value on the stack while [`NonZeroU64`] is passed in registers.
+/// better resembles a protobuf key, but when used in a Result `rustc` passes
+/// the return value on the stack while [`NonZeroU64`] is passed in registers.
 ///
 /// The layout mirrors the protobuf wire format:
 /// * Bits 0-2: wire type (0-5)
@@ -31,29 +31,28 @@ pub struct ProtoKey(NonZeroU64);
 
 #[allow(clippy::as_conversions)]
 impl ProtoKey {
-    /// Creates a new `ProtoKey` from a raw key value, validating the wire type and tag.
+    /// Creates a new [`ProtoKey`] from a raw key value, validating the wire type and tag.
     ///
-    /// Returns an error if the wire type is invalid (> 5) or the tag is out of range.
-    /// The inlined validation ensures this compiles to the same code as manual checks.
+    /// Returns an error if the wire type is invalid or the tag is out of range.
     #[inline(always)]
     fn try_from_raw(raw_key: u32) -> Result<Self, DecodeError> {
-        // Validate wire type (first 3 bits must be 0-5).
+        // Validate wire type.
         let wire_type_raw = (raw_key & 0b111) as u8;
         if unlikely(wire_type_raw > WireType::MAX_VAL) {
             return Err(DecodeError::invalid_wire_type(wire_type_raw));
         }
 
-        // Validate tag is in valid range (1 to 2^29-1).
+        // Validate tag is in valid range.
         let tag = raw_key >> 3;
         if unlikely(tag == 0 || tag > MAXIMUM_TAG_VAL) {
             return Err(DecodeError::invalid_key(InvalidKeyReason::TagOutOfRange));
         }
 
-        // SAFETY: We validated tag >= 1 above, so raw_key >= 8, guaranteeing non-zero.
+        // SAFETY: We validated tag >= 1 above raw_key is non-zero.
         Ok(Self(unsafe { NonZeroU64::new_unchecked(raw_key as u64) }))
     }
 
-    /// Returns the wire type component of this key.
+    /// Returns the [`WireType`] component of this key.
     #[inline(always)]
     pub const fn wire_type(self) -> WireType {
         let raw = (self.0.get() & 0b111) as u8;
@@ -67,7 +66,7 @@ impl ProtoKey {
         (self.0.get() >> 3) as u32
     }
 
-    /// Decomposes this key into its wire type and tag components.
+    /// Decomposes this key into its [`WireType`] and tag components.
     #[inline(always)]
     pub const fn into_parts(self) -> (WireType, u32) {
         (self.wire_type(), self.tag())
@@ -75,6 +74,8 @@ impl ProtoKey {
 }
 
 impl core::fmt::Debug for ProtoKey {
+    #[cold]
+    #[inline(never)]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ProtoKey")
             .field("wire_type", &self.wire_type())

@@ -6,6 +6,7 @@
 use core::num::NonZeroU8;
 
 use crate::error::DecodeError;
+use crate::util::{CacheAligned, CastFrom};
 
 /// Types that can be decoded from a LEB128 encoded integer.
 pub trait LebCodec: Sized {
@@ -35,12 +36,12 @@ pub trait LebCodec: Sized {
 
     /// Decode a LEB128 variable with bounds checking.
     fn decode_leb128_safe(data: &[u8]) -> Option<(Self, NonZeroU8)> {
-        // Fast path: if the input is long enough, we can decode directly.
+        // Fast path, if the input is long enough we can decode directly.
         if data.len() >= Self::MAX_LEB_BYTES as usize {
             return unsafe { Self::decode_leb128(data.as_ptr()) };
         }
 
-        // Slow path: copy to a buffer that we know is safe to read from.
+        // Slow path, copy to a buffer that we know is safe to read from.
         let mut buffer = [0u8; 16];
         let len = data.len().min(16);
         buffer[..len].copy_from_slice(&data[..len]);
@@ -48,11 +49,13 @@ pub trait LebCodec: Sized {
         unsafe { Self::decode_leb128(buffer.as_ptr()) }
     }
 
-    /// Decode a LEB128 variable from a `Buf`, returning `Result` for error context.
+    /// Decode a LEB128 variable from a [`Buf`] returning `Result` for error context.
+    ///
+    /// [`Buf`]: bytes::Buf
     fn decode_leb128_buf<B: bytes::Buf>(buf: &mut B) -> Result<(Self, NonZeroU8), DecodeError> {
         let chunk = buf.chunk();
 
-        // Fast path: current chunk has enough bytes for direct decode.
+        // Fast path, current chunk has enough bytes for direct decode.
         if chunk.len() >= Self::MAX_LEB_BYTES as usize {
             let (value, bytes_read) = unsafe { Self::decode_leb128(chunk.as_ptr()) }
                 .ok_or_else(DecodeError::invalid_varint)?;
@@ -60,7 +63,7 @@ pub trait LebCodec: Sized {
             return Ok((value, bytes_read));
         }
 
-        // Slow path: read byte by byte.
+        // Slow path, read byte by byte.
         let mut buffer = [0u8; 16];
         for i in 0..Self::MAX_LEB_BYTES as usize {
             if !buf.has_remaining() {
@@ -75,8 +78,7 @@ pub trait LebCodec: Sized {
         Err(DecodeError::invalid_varint())
     }
 
-    /// Encode `self` as a LEB128 variable length integer into the provided
-    /// buffer.
+    /// Encode `self` as a LEB128 variable length integer into the provided buffer.
     fn encode_leb128<B: bytes::BufMut>(self, buf: &mut B) -> usize;
 
     /// The number of bytes required to encode this integer.
@@ -88,12 +90,11 @@ impl LebCodec for u64 {
 
     #[inline]
     unsafe fn decode_leb128(data: *const u8) -> Option<(Self, NonZeroU8)> {
-        // SAFETY: All NonZeroU8::new_unchecked calls are safe because 1-10 are all non-zero.
-
         // Byte 1.
         let mut b: u8 = unsafe { *data };
         let mut value = b as u64;
         if b < 0x80 {
+            // SAFETY: Non-zero value.
             return Some((value, unsafe { NonZeroU8::new_unchecked(1) }));
         };
         value -= 0x80;
@@ -102,6 +103,7 @@ impl LebCodec for u64 {
         b = unsafe { *data.add(1) };
         value += (b as u64) << 7;
         if b < 0x80 {
+            // SAFETY: Non-zero value.
             return Some((value, unsafe { NonZeroU8::new_unchecked(2) }));
         };
         value -= 0x80 << 7;
@@ -110,6 +112,7 @@ impl LebCodec for u64 {
         b = unsafe { *data.add(2) };
         value += (b as u64) << 14;
         if b < 0x80 {
+            // SAFETY: Non-zero value.
             return Some((value, unsafe { NonZeroU8::new_unchecked(3) }));
         };
         value -= 0x80 << 14;
@@ -118,6 +121,7 @@ impl LebCodec for u64 {
         b = unsafe { *data.add(3) };
         value += (b as u64) << 21;
         if b < 0x80 {
+            // SAFETY: Non-zero value.
             return Some((value, unsafe { NonZeroU8::new_unchecked(4) }));
         };
         value -= 0x80 << 21;
@@ -126,6 +130,7 @@ impl LebCodec for u64 {
         b = unsafe { *data.add(4) };
         value += (b as u64) << 28;
         if b < 0x80 {
+            // SAFETY: Non-zero value.
             return Some((value, unsafe { NonZeroU8::new_unchecked(5) }));
         };
         value -= 0x80 << 28;
@@ -134,6 +139,7 @@ impl LebCodec for u64 {
         b = unsafe { *data.add(5) };
         value += (b as u64) << 35;
         if b < 0x80 {
+            // SAFETY: Non-zero value.
             return Some((value, unsafe { NonZeroU8::new_unchecked(6) }));
         };
         value -= 0x80 << 35;
@@ -142,6 +148,7 @@ impl LebCodec for u64 {
         b = unsafe { *data.add(6) };
         value += (b as u64) << 42;
         if b < 0x80 {
+            // SAFETY: Non-zero value.
             return Some((value, unsafe { NonZeroU8::new_unchecked(7) }));
         };
         value -= 0x80 << 42;
@@ -150,6 +157,7 @@ impl LebCodec for u64 {
         b = unsafe { *data.add(7) };
         value += (b as u64) << 49;
         if b < 0x80 {
+            // SAFETY: Non-zero value.
             return Some((value, unsafe { NonZeroU8::new_unchecked(8) }));
         };
         value -= 0x80 << 49;
@@ -158,6 +166,7 @@ impl LebCodec for u64 {
         b = unsafe { *data.add(8) };
         value += (b as u64) << 56;
         if b < 0x80 {
+            // SAFETY: Non-zero value.
             return Some((value, unsafe { NonZeroU8::new_unchecked(9) }));
         };
         value -= 0x80 << 56;
@@ -166,6 +175,7 @@ impl LebCodec for u64 {
         b = unsafe { *data.add(9) };
         value += (b as u64) << 63;
         if b < 0x02 {
+            // SAFETY: Non-zero value.
             return Some((value, unsafe { NonZeroU8::new_unchecked(10) }));
         };
 
@@ -269,27 +279,28 @@ impl LebCodec for u64 {
 
     /// Compute the LEB128 encoded length using leading_zeros.
     ///
-    /// LEB128 encodes 7 bits per byte. The number of bytes needed is
-    /// ceil(significant_bits / 7), with a minimum of 1 byte for value 0.
+    /// LEB128 encodes 7 bits per byte, knowing this we can map the number of
+    /// leading zeros to the number of bytes required for encoding.
     ///
-    /// For u64: significant_bits = 64 - leading_zeros
-    /// bytes = ceil((64 - lz) / 7) = (64 - lz + 6) / 7 = (70 - lz) / 7
+    /// # Performance
     ///
-    /// The lookup table approach is faster than division because:
-    /// 1. leading_zeros() compiles to a single LZCNT instruction (~1-3 cycles)
-    /// 2. Table lookup is a single memory access (likely in L1 cache)
-    /// 3. No division or branching required
+    /// Google's implementation [1] does some neat math to determine the encoded length.
+    /// Our lookup table approach should be just as fast if the table is in the L1
+    /// cache, which is pretty likely. Additionally the lookup table allows for better
+    /// out of order execution which could be beneficial.
+    ///
+    /// At the end of the day we're talking about a few CPU cycles so it probably doesn't
+    /// matter, but I wanted to document some reasoning.
+    ///
+    /// [1]: https://github.com/protocolbuffers/protobuf/blob/v33.2/src/google/protobuf/io/coded_stream.h#L1786-L1798
     #[inline]
     fn encoded_leb128_len(self) -> usize {
-        // Lookup table mapping leading_zeros (0-64) to LEB128 byte count.
-        // Index 64 (value 0) maps to 1 byte.
-        // Index 0 (all 64 bits used) maps to 10 bytes.
-        //
-        // For each lz value, significant_bits = 64 - lz
-        // bytes = ceil(significant_bits / 7), minimum 1
-        // Static to ensure single copy in .rodata, not duplicated at inline sites.
+        /// Lookup table mapping leading_zeros (0-64) to LEB128 byte count for u64.
+        ///
+        /// We use [`CacheAligned`] to ensure the majority of this table sits in a single cache
+        /// line so lookups are as fast as possible.
         #[rustfmt::skip]
-        static LZ_TO_LEN: [u8; 65] = [
+        static LZ_TO_LEN: CacheAligned<[u8; 65]> = CacheAligned([
             10,                                         // 0:     64 bits -> 10 bytes
             9, 9, 9, 9, 9, 9, 9,                        // 1-7:   63-57 bits -> 9 bytes
             8, 8, 8, 8, 8, 8, 8,                        // 8-14:  56-50 bits -> 8 bytes
@@ -300,10 +311,12 @@ impl LebCodec for u64 {
             3, 3, 3, 3, 3, 3, 3,                        // 43-49: 21-15 bits -> 3 bytes
             2, 2, 2, 2, 2, 2, 2,                        // 50-56: 14-8 bits  -> 2 bytes
             1, 1, 1, 1, 1, 1, 1, 1,                     // 57-64: 7-0 bits   -> 1 byte
-        ];
+        ]);
 
+        let index = usize::cast_from(self.leading_zeros());
         // SAFETY: leading_zeros() returns 0-64 for u64, which is in bounds.
-        LZ_TO_LEN[self.leading_zeros() as usize] as usize
+        let bytes = unsafe { LZ_TO_LEN.0.get_unchecked(index) };
+        usize::cast_from(*bytes)
     }
 }
 
@@ -406,42 +419,38 @@ impl LebCodec for u32 {
         5
     }
 
-    /// Compute the LEB128 encoded length using leading_zeros.
+    /// Compute the LEB128 encoded length using leading_zeros and a lookup table.
     ///
-    /// For u32: significant_bits = 32 - leading_zeros
-    /// bytes = ceil((32 - lz) / 7) = (32 - lz + 6) / 7 = (38 - lz) / 7
+    /// See the [`u64::encoded_leb128_len`] function for comments on the performance.
     #[inline]
     fn encoded_leb128_len(self) -> usize {
-        // Lookup table mapping leading_zeros (0-32) to LEB128 byte count.
-        // Static to ensure single copy in .rodata, not duplicated at inline sites.
+        /// Lookup table mapping leading_zeros (0-32) to LEB128 byte count for u32.
+        ///
+        /// We use [`CacheAligned`] to ensure the entire table sits in a single cache line so
+        /// lookups are as fast as possible.
         #[rustfmt::skip]
-        static LZ_TO_LEN: [u8; 33] = [
+        static LZ_TO_LEN: CacheAligned<[u8; 33]> = CacheAligned([
             5, 5, 5, 5,                         // 0-3:   32-29 bits -> 5 bytes
             4, 4, 4, 4, 4, 4, 4,                // 4-10:  28-22 bits -> 4 bytes
             3, 3, 3, 3, 3, 3, 3,                // 11-17: 21-15 bits -> 3 bytes
             2, 2, 2, 2, 2, 2, 2,                // 18-24: 14-8 bits  -> 2 bytes
             1, 1, 1, 1, 1, 1, 1, 1,             // 25-32: 7-0 bits   -> 1 byte
-        ];
+        ]);
 
+        let index = usize::cast_from(self.leading_zeros());
         // SAFETY: leading_zeros() returns 0-32 for u32, which is in bounds.
-        LZ_TO_LEN[self.leading_zeros() as usize] as usize
+        let bytes = unsafe { LZ_TO_LEN.0.get_unchecked(index) };
+        usize::cast_from(*bytes)
     }
 }
 
 /// Branchless implementation for decoding a `u64` encoded with LEB128.
 ///
-/// While theoretically this could be pretty, fast micro-benchmarks show this
-/// actually performs worse than more naive implementations that decode a byte
-/// at a time.
+/// While theoretically this could be pretty, fast micro-benchmarks on both aarch64 and
+/// x86_64 machines show this actually performs worse than more naive implementations
+/// that decode a byte at a time.
 ///
 /// The implementation is left here to document optimization attempts.
-///
-/// ### TODO(parker):
-///
-/// * Benchmark on x86_64. Better performance of `LZCNT` (trailing zeros) and
-///   `PEXT` (final combination of bits) could lead to overall better performance.
-/// * Add a "b" impl which decodes one u64 and optionally returns early, then
-///   decodes the second chunk only if necessary.
 ///
 /// # Safety
 ///

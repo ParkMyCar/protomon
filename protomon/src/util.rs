@@ -46,6 +46,10 @@ pub(crate) fn unlikely(b: bool) -> bool {
     }
 }
 
+/// Wrapper to align data to a 64-byte cache line boundary.
+#[repr(C, align(64))]
+pub(crate) struct CacheAligned<T>(pub T);
+
 /// Infallible cast from type `T` to `Self`.
 ///
 /// This trait is implemented for conversions that are always safe, such as

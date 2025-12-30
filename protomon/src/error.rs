@@ -33,6 +33,9 @@ use core::num::NonZeroU64;
 /// allocating is not bad, but this prevents zero-allocation decoding which is
 /// desirable for platforms without an allocator.
 ///
+/// All of the constructors, e.g. [`DecodeError::invalid_wire_type`] are
+/// annoted with `#[cold]` and `#[inline(never)]` so all of our error handling
+/// paths are outlined, and the common case is as fast as possible.
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct DecodeError(NonZeroU64);
@@ -179,7 +182,6 @@ impl DecodeError {
     /// error's context.
     #[cold]
     #[inline(never)]
-    #[allow(clippy::as_conversions)]
     pub const fn length_mismatch(expected: usize, actual: usize) -> Self {
         let expected_u16 = expected as u16;
         let actual_u16 = actual as u16;
