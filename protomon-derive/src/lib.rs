@@ -141,17 +141,17 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
     })
 }
 
+/// Generate the implementation for `ProtoDecode::decode_into`.
 fn generate_decode_into(fields: &[FieldMetadata]) -> TokenStream2 {
-    // Find the unknown field if present
+    // Find the unknown field if present.
     let unknown_field = fields.iter().find(|f| f.kind.is_unknown());
     let has_unknown_field = unknown_field.is_some();
 
     // Filter out the unknown field from normal processing
     let regular_fields: Vec<_> = fields.iter().filter(|f| !f.kind.is_unknown()).collect();
 
-    // Generate field initializations that work directly on dst
-    // Only repeated fields need init_repeated - other fields are already default
-    // (caller is responsible for providing a default-initialized dst)
+    // Repeated fields are initialized with the messages entire buffer. This
+    // enables lazy deserialization.
     let field_inits = regular_fields.iter().filter_map(|f| {
         if let FieldKind::Repeated { tag } = &f.kind {
             let fname = f.name;
@@ -163,19 +163,17 @@ fn generate_decode_into(fields: &[FieldMetadata]) -> TokenStream2 {
         }
     });
 
-    // Collect oneof fields, separating required from optional
-    let oneof_fields: Vec<&&FieldMetadata> = regular_fields
-        .iter()
-        .filter(|f| f.kind.as_oneof().is_some())
-        .collect();
-    let (required_oneof_fields, optional_oneof_fields): (
-        Vec<&&FieldMetadata>,
-        Vec<&&FieldMetadata>,
-    ) = oneof_fields
-        .into_iter()
-        .partition(|f| f.kind.as_oneof().map(|(_, req)| req).unwrap_or(false));
+    // Collect oneof fields, separating required from optional.
+    let (required_oneof_fields, optional_oneof_fields): (Vec<&FieldMetadata>, Vec<&FieldMetadata>) =
+        regular_fields
+            .iter()
+            .filter(|f| f.kind.as_oneof().is_some())
+            .partition(|field| {
+                let (_tags, required) = field.kind.as_oneof().expect("filtered above");
+                required
+            });
 
-    // Generate temporary variables for required oneofs
+    // Generate temporary variables for required oneofs.
     let required_oneof_temps = required_oneof_fields.iter().map(|f| {
         let fname = f.name;
         let temp_name = format_ident!("__oneof_{}", fname);
@@ -195,9 +193,9 @@ fn generate_decode_into(fields: &[FieldMetadata]) -> TokenStream2 {
         quote!()
     };
 
-    // Generate match arms for regular fields (excluding unknown and oneof fields)
+    // Generate match arms for regular fields (excluding unknown and oneof fields).
     let regular_decode_arms = regular_fields.iter().filter_map(|f| {
-        // Skip oneof fields - they're handled separately
+        // Skip oneof fields, they're handled separately.
         if f.kind.as_oneof().is_some() {
             return None;
         }
@@ -208,27 +206,26 @@ fn generate_decode_into(fields: &[FieldMetadata]) -> TokenStream2 {
 
         match &f.kind {
             FieldKind::Map { .. } => {
-                // Map fields decode a single entry per tag occurrence
+                // Map fields decode a single entry per tag occurrence.
                 Some(quote! {
                     #tag => protomon::codec::ProtoMap::decode_entry(&mut dst.#fname, &mut buf)?,
                 })
             }
             FieldKind::Repeated { .. } => {
-                // For Vec<T> repeated fields, use decode_repeated_into which handles packed encoding
-                // Extract the inner type T from Vec<T>
+                // For Vec<T> repeated fields, use decode_repeated_into which handles packed encoding.
                 if let Some(inner_ty) = extract_vec_inner_type(fty) {
                     Some(quote! {
                         #tag => protomon::codec::decode_repeated_into::<#inner_ty, _>(wire_type, &mut buf, &mut dst.#fname, value_offset)?,
                     })
                 } else {
-                    // For Repeated<T> or other types, use the standard decode_into
+                    // For Repeated<T> or other types, use the standard decode_into.
                     Some(quote! {
                         #tag => <#fty as protomon::codec::ProtoDecode>::decode_into(&mut buf, &mut dst.#fname, value_offset)?,
                     })
                 }
             }
             _ => {
-                // Singular or Optional fields
+                // Singular or Optional fields.
                 Some(quote! {
                     #tag => <#fty as protomon::codec::ProtoDecode>::decode_into(&mut buf, &mut dst.#fname, value_offset)?,
                 })
@@ -240,9 +237,9 @@ fn generate_decode_into(fields: &[FieldMetadata]) -> TokenStream2 {
     let optional_oneof_decode_arms = optional_oneof_fields.iter().flat_map(|f| {
         let fname = f.name;
         let fty = f.ty;
-        let (tags, _) = f.kind.as_oneof().unwrap();
+        let (tags, _) = f.kind.as_oneof().expect("filtered earlier");
 
-        // Extract the inner type from Option<T> for the decode_oneof_field call
+        // Extract the inner type from Option<T> for the decode_oneof_field call.
         let inner_ty = extract_option_inner_type(fty);
 
         tags.iter().map(move |tag| {
@@ -277,7 +274,7 @@ fn generate_decode_into(fields: &[FieldMetadata]) -> TokenStream2 {
         })
     });
 
-    // Generate validation and assignment for required oneofs after decode loop
+    // Generate validation and assignment for required oneofs after decode loop.
     let required_oneof_validations = required_oneof_fields.iter().map(|f| {
         let fname = f.name;
         let temp_name = format_ident!("__oneof_{}", fname);
@@ -294,51 +291,16 @@ fn generate_decode_into(fields: &[FieldMetadata]) -> TokenStream2 {
     let default_arm = if has_unknown_field {
         quote! {
             _ => {
-                // Collect unknown field: we need to preserve the key and the value
-                // First, encode the key (tag and wire type) into unknown_buf
+                // Re-encode the key and wire type.
                 use protomon::leb128::LebCodec;
                 let key = (tag << 3) | wire_type as u32;
                 key.encode_leb128(&mut unknown_buf);
 
-                // Then copy the field value into unknown_buf
-                match wire_type {
-                    protomon::wire::WireType::Varint => {
-                        // Read the varint and encode it to unknown_buf
-                        let (val, _) = u64::decode_leb128_buf(&mut buf)?;
-                        val.encode_leb128(&mut unknown_buf);
-                    }
-                    protomon::wire::WireType::I64 => {
-                        // Copy 8 bytes directly without intermediate Bytes allocation
-                        if buf.remaining() < 8 {
-                            return Err(protomon::error::DecodeError::unexpected_end_of_buffer());
-                        }
-                        unknown_buf.extend_from_slice(&buf.chunk()[..8]);
-                        buf.advance(8);
-                    }
-                    protomon::wire::WireType::Len => {
-                        // Read length and copy length + data
-                        let len = protomon::wire::decode_len(&mut buf)?;
-                        // Encode the length to unknown_buf
-                        (len as u64).encode_leb128(&mut unknown_buf);
-                        // Copy the data directly without intermediate Bytes allocation
-                        if buf.remaining() < len {
-                            return Err(protomon::error::DecodeError::unexpected_end_of_buffer());
-                        }
-                        unknown_buf.extend_from_slice(&buf.chunk()[..len]);
-                        buf.advance(len);
-                    }
-                    protomon::wire::WireType::I32 => {
-                        // Copy 4 bytes directly without intermediate Bytes allocation
-                        if buf.remaining() < 4 {
-                            return Err(protomon::error::DecodeError::unexpected_end_of_buffer());
-                        }
-                        unknown_buf.extend_from_slice(&buf.chunk()[..4]);
-                        buf.advance(4);
-                    }
-                    protomon::wire::WireType::SGroup | protomon::wire::WireType::EGroup => {
-                        return Err(protomon::error::DecodeError::deprecated_group_encoding());
-                    }
-                }
+                // Copy the field's bytes.
+                let value_start = original_len - buf.remaining();
+                skip_field(wire_type, &mut buf)?;
+                let value_end = original_len - buf.remaining();
+                unknown_buf.extend_from_slice(&original_buf[value_start..value_end]);
             }
         }
     } else {
@@ -357,6 +319,14 @@ fn generate_decode_into(fields: &[FieldMetadata]) -> TokenStream2 {
         quote!()
     };
 
+    // When we have an unknown field, we need to keep a reference to the original
+    // buffer so we can copy the value bytes for unknown fields.
+    let original_buf_init = if has_unknown_field {
+        quote! { let original_buf = buf.clone(); }
+    } else {
+        quote! {}
+    };
+
     quote! {
         #[inline(always)]
         fn decode_message_into(buf: bytes::Bytes, dst: &mut Self) -> Result<(), protomon::error::DecodeError> {
@@ -364,6 +334,7 @@ fn generate_decode_into(fields: &[FieldMetadata]) -> TokenStream2 {
             use protomon::codec::ProtoDecode;
             use protomon::wire::{decode_key, skip_field};
 
+            #original_buf_init
             let original_len = buf.len();
             let mut buf = buf;
             #(#field_inits)*
