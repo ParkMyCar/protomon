@@ -1,8 +1,5 @@
 //! Wrapper type support for protobuf (e.g. Option, Box).
 
-#[cfg(feature = "alloc")]
-use alloc::boxed::Box;
-
 use super::{ProtoDecode, ProtoEncode, ProtoType};
 use crate::error::DecodeError;
 use crate::wire::WireType;
@@ -42,15 +39,13 @@ impl<T: ProtoEncode> ProtoEncode for Option<T> {
     }
 }
 
-// Box<T> implementations - allows heap allocation for recursive or large types.
-
 #[cfg(feature = "alloc")]
-impl<T: ProtoType> ProtoType for Box<T> {
+impl<T: ProtoType> ProtoType for alloc::boxed::Box<T> {
     const WIRE_TYPE: WireType = T::WIRE_TYPE;
 }
 
 #[cfg(feature = "alloc")]
-impl<T: ProtoDecode> ProtoDecode for Box<T> {
+impl<T: ProtoDecode> ProtoDecode for alloc::boxed::Box<T> {
     #[inline]
     fn decode_into<B: bytes::Buf>(
         buf: &mut B,
@@ -62,7 +57,7 @@ impl<T: ProtoDecode> ProtoDecode for Box<T> {
 }
 
 #[cfg(feature = "alloc")]
-impl<T: ProtoEncode> ProtoEncode for Box<T> {
+impl<T: ProtoEncode> ProtoEncode for alloc::boxed::Box<T> {
     #[inline]
     fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
         self.as_ref().encode(buf);
@@ -71,6 +66,37 @@ impl<T: ProtoEncode> ProtoEncode for Box<T> {
     #[inline]
     fn encoded_len(&self) -> usize {
         self.as_ref().encoded_len()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T: ProtoType> ProtoType for alloc::rc::Rc<core::cell::RefCell<T>> {
+    const WIRE_TYPE: WireType = T::WIRE_TYPE;
+}
+
+#[cfg(feature = "alloc")]
+impl<T: ProtoDecode> ProtoDecode for alloc::rc::Rc<core::cell::RefCell<T>> {
+    #[inline]
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        offset: usize,
+    ) -> Result<(), DecodeError> {
+        let mut borrow = dst.borrow_mut();
+        T::decode_into(buf, &mut borrow, offset)
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T: ProtoEncode> ProtoEncode for alloc::rc::Rc<core::cell::RefCell<T>> {
+    #[inline]
+    fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+        self.borrow().encode(buf);
+    }
+
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        self.borrow().encoded_len()
     }
 }
 
