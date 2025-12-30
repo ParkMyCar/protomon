@@ -3,11 +3,21 @@
 //! Provides `#[derive(ProtoMessage)]` and `#[derive(ProtoOneof)]` for generating
 //! protobuf encoding/decoding implementations.
 
+use std::ops::RangeInclusive;
+
+use darling::FromMeta;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::spanned::Spanned;
 use syn::{DeriveInput, Field, Fields, Ident, Result, Type, Variant};
+
+/// Minimum value of a protobuf tag.
+const MINIMUM_TAG_VAL: u32 = 1;
+/// Maximum value of a protobuf tag.
+const MAXIMUM_TAG_VAL: u32 = (1 << 29) - 1;
+/// Range of tag values that is reserved by Google.
+const RESERVED_TAG_RANGE: RangeInclusive<u32> = 19000..=19999;
 
 /// Derive macro for implementing `ProtoMessage` trait.
 ///
@@ -28,9 +38,6 @@ use syn::{DeriveInput, Field, Fields, Ident, Result, Type, Variant};
 ///     phones: Repeated<LazyMessage<PhoneNumber>>,
 /// }
 /// ```
-///
-/// The wire type for each field is inferred from the Rust type using
-/// `<T as ProtoType>::WIRE_TYPE`, so there's no need to specify it manually.
 #[proc_macro_derive(ProtoMessage, attributes(proto))]
 pub fn derive_proto_message(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as DeriveInput);
@@ -41,20 +48,14 @@ pub fn derive_proto_message(input: TokenStream) -> TokenStream {
     }
 }
 
-struct FieldInfo<'a> {
+/// Metadata for a single field from a `struct`.
+struct FieldMetadata<'a> {
+    /// Name of the field.
     name: &'a Ident,
+    /// Type of the field.
     ty: &'a Type,
-    tag: u32,
-    repeated: bool,
-    optional: bool,
-    /// If this is a map field (BTreeMap or HashMap).
-    map: bool,
-    /// If this is a oneof field, contains all tags that belong to this oneof.
-    oneof_tags: Option<Vec<u32>>,
-    /// If this is a required (non-nullable) oneof field.
-    oneof_required: bool,
-    /// If this is the unknown fields buffer (for preserving unknown fields).
-    unknown: bool,
+    /// Attributes from the `#[proto(...)]` annotation.
+    attrs: FieldAttrs,
 }
 
 fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
@@ -73,50 +74,19 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
         _ => return Err(syn::Error::new_spanned(input, "only structs supported")),
     };
 
-    let field_info: Vec<FieldInfo> = fields
+    let field_info: Vec<FieldMetadata> = fields
         .iter()
-        .map(|f| {
-            let attrs = parse_proto_attrs(f)?;
-            Ok(FieldInfo {
-                name: f.ident.as_ref().unwrap(),
-                ty: &f.ty,
-                tag: attrs.tag,
-                repeated: attrs.repeated,
-                optional: attrs.optional,
-                map: attrs.map,
-                oneof_tags: attrs.oneof_tags,
-                oneof_required: attrs.oneof_required,
-                unknown: attrs.unknown,
-            })
-        })
+        .map(parse_field_metadata)
         .collect::<Result<Vec<_>>>()?;
 
     // Check for duplicate tags
-    let mut seen_tags = std::collections::HashSet::new();
+    let mut seen_tags = std::collections::BTreeSet::new();
     for f in &field_info {
-        if let Some(ref tags) = f.oneof_tags {
-            // Oneof fields use their tags list
-            for &tag in tags {
-                if !seen_tags.insert(tag) {
-                    return Err(syn::Error::new_spanned(
-                        f.name,
-                        format!(
-                            "duplicate tag {} (tags must be unique across all fields)",
-                            tag
-                        ),
-                    ));
-                }
-            }
-        } else {
-            // Regular fields use their single tag
-            if !seen_tags.insert(f.tag) {
-                return Err(syn::Error::new_spanned(
-                    f.name,
-                    format!(
-                        "duplicate tag {} (tags must be unique across all fields)",
-                        f.tag
-                    ),
-                ));
+        for tag in f.attrs.all_tags() {
+            // insert() returns false if the value already existed
+            if !seen_tags.insert(*tag) {
+                let msg = format!("duplicate tag '{tag}' (tags must be unique across all fields)");
+                return Err(syn::Error::new_spanned(f.name, msg));
             }
         }
     }
@@ -172,185 +142,159 @@ fn impl_proto_message(input: &DeriveInput) -> Result<TokenStream2> {
     })
 }
 
-struct ProtoFieldAttrs {
+struct FieldAttrs {
+    /// The protobuf tag number.
     tag: u32,
+    /// Whether this is a repeated field.
+    repeated: bool,
+    /// Whether this is an optional field (Option<T>).
+    optional: bool,
+    /// Whether this is a map field.
+    map: bool,
+    /// If this is a oneof field, contains all tags that belong to this oneof.
+    oneof_tags: Option<Vec<u32>>,
+    /// If this is a required (non-nullable) oneof field.
+    oneof_required: bool,
+    /// Whether this field stores unknown fields.
+    unknown: bool,
+}
+
+impl FieldAttrs {
+    /// Returns all of the tag values this field is annotated with.
+    pub fn all_tags(&self) -> impl Iterator<Item = &u32> {
+        let single_tag = if self.oneof_tags.is_some() || self.unknown {
+            None
+        } else {
+            Some(&self.tag)
+        };
+        single_tag
+            .into_iter()
+            .chain(self.oneof_tags.iter().flatten())
+    }
+}
+
+/// Raw attributes parsed from `#[proto(...)]` on a field.
+#[derive(Debug, Default, FromMeta)]
+#[darling(default)]
+struct RawProtoFieldAttrs {
+    tag: Option<u32>,
     repeated: bool,
     optional: bool,
     map: bool,
-    oneof_tags: Option<Vec<u32>>,
-    oneof_required: bool,
+    oneof: bool,
+    tags: Option<String>,
+    required: bool,
     unknown: bool,
 }
 
 /// Validates that a tag number is within the valid Protocol Buffers range.
-///
-/// Valid tags are 1 to 536870911 (2^29-1), excluding the reserved range 19000-19999.
 fn validate_tag(tag: u32, span: proc_macro2::Span) -> Result<()> {
-    const MAX_TAG: u32 = 536_870_911; // 2^29 - 1
-    const RESERVED_START: u32 = 19000;
-    const RESERVED_END: u32 = 19999;
-
-    if tag == 0 {
-        return Err(syn::Error::new(
-            span,
-            "Tag number 0 is invalid. Valid tag numbers are 1 to 536870911, excluding 19000-19999",
-        ));
-    }
-
-    if tag > MAX_TAG {
-        return Err(syn::Error::new(
-            span,
-            format!(
-                "Tag number {} exceeds the maximum allowed value of {} (2^29-1)",
-                tag, MAX_TAG
-            ),
-        ));
-    }
-
-    if (RESERVED_START..=RESERVED_END).contains(&tag) {
-        return Err(syn::Error::new(
-            span,
-            format!(
-                "Tag number {} is in the reserved range {}-{}",
-                tag, RESERVED_START, RESERVED_END
-            ),
-        ));
+    if !(MINIMUM_TAG_VAL..=MAXIMUM_TAG_VAL).contains(&tag) || RESERVED_TAG_RANGE.contains(&tag) {
+        let msg = format!(
+            "Tag number '{}' is invalid. Valid tag numbers are in the range [{}, {}], excluding [{}, {}]",
+            tag,
+            MINIMUM_TAG_VAL,
+            MAXIMUM_TAG_VAL,
+            RESERVED_TAG_RANGE.start(),
+            RESERVED_TAG_RANGE.end(),
+        );
+        return Err(syn::Error::new(span, msg));
     }
 
     Ok(())
 }
 
-/// Parse #[proto(tag = N, repeated, optional, map, oneof, tags = "1, 2, 3", required, unknown)] attributes.
-fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
-    let mut tag = None;
-    let mut repeated = false;
-    let mut optional = false;
-    let mut map = false;
-    let mut is_oneof = false;
-    let mut oneof_tags_str: Option<String> = None;
-    let mut required = false;
-    let mut unknown = false;
+/// Parse `#[proto(...)]` attributes from a field and return complete metadata.
+fn parse_field_metadata(field: &Field) -> Result<FieldMetadata<'_>> {
+    // Find the #[proto(...)] attribute and parse it with darling
+    let raw = field
+        .attrs
+        .iter()
+        .find(|attr| attr.path().is_ident("proto"))
+        .map(|attr| RawProtoFieldAttrs::from_meta(&attr.meta))
+        .transpose()
+        .map_err(|e| syn::Error::new_spanned(field, e.to_string()))?
+        .unwrap_or_default();
 
-    for attr in &field.attrs {
-        if attr.path().is_ident("proto") {
-            attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("tag") {
-                    let value: syn::LitInt = meta.value()?.parse()?;
-                    let parsed_tag = value.base10_parse::<u32>()?;
-                    validate_tag(parsed_tag, value.span())?;
-                    tag = Some(parsed_tag);
-                } else if meta.path.is_ident("repeated") {
-                    repeated = true;
-                } else if meta.path.is_ident("optional") {
-                    optional = true;
-                } else if meta.path.is_ident("map") {
-                    map = true;
-                } else if meta.path.is_ident("oneof") {
-                    is_oneof = true;
-                } else if meta.path.is_ident("tags") {
-                    let value: syn::LitStr = meta.value()?.parse()?;
-                    oneof_tags_str = Some(value.value());
-                } else if meta.path.is_ident("required") {
-                    required = true;
-                } else if meta.path.is_ident("unknown") {
-                    unknown = true;
-                }
-                Ok(())
-            })?;
-        }
-    }
+    // Parse oneof tags string into Vec<u32>
+    let oneof_tags = if raw.oneof {
+        let Some(tags_str) = raw.tags else {
+            let msg = "oneof field requires tags = \"1, 2, 3\" attribute";
+            return Err(syn::Error::new_spanned(field, msg));
+        };
+        let tags = tags_str
+            .split(',')
+            .map(|s| {
+                let parsed_tag = s
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(|_| syn::Error::new_spanned(field, "invalid tag in tags list"))?;
+                validate_tag(parsed_tag, field.span())?;
+                Ok(parsed_tag)
+            })
+            .collect::<Result<Vec<u32>>>()?;
 
-    // For oneof fields, parse the tags string
-    let oneof_tags = if is_oneof {
-        match oneof_tags_str {
-            Some(tags_str) => {
-                let tags: Result<Vec<u32>> = tags_str
-                    .split(',')
-                    .map(|s| {
-                        let parsed_tag = s.trim().parse::<u32>().map_err(|_| {
-                            syn::Error::new_spanned(field, "invalid tag in tags list")
-                        })?;
-                        validate_tag(parsed_tag, field.span())?;
-                        Ok(parsed_tag)
-                    })
-                    .collect();
-                Some(tags?)
-            }
-            None => {
-                return Err(syn::Error::new_spanned(
-                    field,
-                    "oneof field requires tags = \"1, 2, 3\" attribute",
-                ));
-            }
-        }
+        Some(tags)
     } else {
         None
     };
 
-    // =========================================================================
-    // Validate conflicting attribute combinations
-    // =========================================================================
-
-    // repeated + optional is invalid in protobuf
-    if repeated && optional {
+    if raw.repeated && raw.optional {
         return Err(syn::Error::new_spanned(
             field,
             "field cannot be both 'repeated' and 'optional'",
         ));
     }
 
-    // map + repeated is redundant (maps are implicitly repeated)
-    if map && repeated {
+    if raw.map && raw.repeated {
         return Err(syn::Error::new_spanned(
             field,
             "map fields cannot also be 'repeated' (maps are implicitly repeated)",
         ));
     }
 
-    // map + optional is invalid (maps can't be optional in protobuf)
-    if map && optional {
+    if raw.map && raw.optional {
         return Err(syn::Error::new_spanned(
             field,
             "map fields cannot be 'optional'",
         ));
     }
 
-    // map + oneof is invalid
-    if map && is_oneof {
+    if raw.map && raw.oneof {
         return Err(syn::Error::new_spanned(
             field,
             "map fields cannot be part of a oneof",
         ));
     }
 
-    // oneof + repeated is invalid
-    if is_oneof && repeated {
+    if raw.oneof && raw.repeated {
         return Err(syn::Error::new_spanned(
             field,
             "oneof fields cannot be 'repeated'",
         ));
     }
 
-    // required without oneof is meaningless
-    if required && !is_oneof {
+    if raw.required && !raw.oneof {
         return Err(syn::Error::new_spanned(
             field,
             "'required' attribute is only valid for oneof fields",
         ));
     }
 
-    // =========================================================================
-    // Validate and extract tag
-    // =========================================================================
-
-    // For oneof fields, tag is not required (we use the tags list instead)
-    // For unknown fields, tag is not required (it's handled specially)
-    // Use 0 as placeholder since it's not used for these fields
-    let tag = if is_oneof || unknown {
-        tag.unwrap_or(0)
+    // For oneof/unknown fields, tag is not required (use 0 as placeholder)
+    let tag = if raw.oneof || raw.unknown {
+        if let Some(t) = raw.tag {
+            validate_tag(t, field.span())?;
+            t
+        } else {
+            0
+        }
     } else {
-        match tag {
-            Some(t) => t,
+        match raw.tag {
+            Some(t) => {
+                validate_tag(t, field.span())?;
+                t
+            }
             None => {
                 return Err(syn::Error::new_spanned(
                     field,
@@ -360,81 +304,36 @@ fn parse_proto_attrs(field: &Field) -> Result<ProtoFieldAttrs> {
         }
     };
 
-    // Validate tag range (protobuf spec: 1 to 2^29-1, excluding 19000-19999)
-    const MIN_TAG: u32 = 1;
-    const MAX_TAG: u32 = (1 << 29) - 1;
-    const RESERVED_START: u32 = 19000;
-    const RESERVED_END: u32 = 19999;
-
-    // Only validate regular field tags (oneof and unknown use 0 as placeholder)
-    if !is_oneof && !unknown {
-        if !(MIN_TAG..=MAX_TAG).contains(&tag) {
-            return Err(syn::Error::new_spanned(
-                field,
-                format!("tag must be between {} and {}", MIN_TAG, MAX_TAG),
-            ));
-        }
-        if (RESERVED_START..=RESERVED_END).contains(&tag) {
-            return Err(syn::Error::new_spanned(
-                field,
-                format!(
-                    "tags {}-{} are reserved for protobuf implementation",
-                    RESERVED_START, RESERVED_END
-                ),
-            ));
-        }
-    }
-
-    // Also validate oneof tags
-    if let Some(ref tags) = oneof_tags {
-        for &t in tags {
-            if !(MIN_TAG..=MAX_TAG).contains(&t) {
-                return Err(syn::Error::new_spanned(
-                    field,
-                    format!(
-                        "oneof tag {} must be between {} and {}",
-                        t, MIN_TAG, MAX_TAG
-                    ),
-                ));
-            }
-            if (RESERVED_START..=RESERVED_END).contains(&t) {
-                return Err(syn::Error::new_spanned(
-                    field,
-                    format!(
-                        "oneof tag {} is in reserved range {}-{}",
-                        t, RESERVED_START, RESERVED_END
-                    ),
-                ));
-            }
-        }
-    }
-
-    Ok(ProtoFieldAttrs {
-        tag,
-        repeated,
-        optional,
-        map,
-        oneof_tags,
-        oneof_required: is_oneof && required,
-        unknown,
+    Ok(FieldMetadata {
+        name: field.ident.as_ref().unwrap(),
+        ty: &field.ty,
+        attrs: FieldAttrs {
+            tag,
+            repeated: raw.repeated,
+            optional: raw.optional,
+            map: raw.map,
+            oneof_tags,
+            oneof_required: raw.oneof && raw.required,
+            unknown: raw.unknown,
+        },
     })
 }
 
-fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
+fn generate_decode_into(fields: &[FieldMetadata]) -> TokenStream2 {
     // Find the unknown field if present
-    let unknown_field = fields.iter().find(|f| f.unknown);
+    let unknown_field = fields.iter().find(|f| f.attrs.unknown);
     let has_unknown_field = unknown_field.is_some();
 
     // Filter out the unknown field from normal processing
-    let regular_fields: Vec<_> = fields.iter().filter(|f| !f.unknown).collect();
+    let regular_fields: Vec<_> = fields.iter().filter(|f| !f.attrs.unknown).collect();
 
     // Generate field initializations that work directly on dst
     // Only repeated fields need init_repeated - other fields are already default
     // (caller is responsible for providing a default-initialized dst)
     let field_inits = regular_fields.iter().filter_map(|f| {
-        if f.repeated {
+        if f.attrs.repeated {
             let fname = f.name;
-            let tag = f.tag;
+            let tag = f.attrs.tag;
             Some(quote! {
                 protomon::codec::ProtoRepeated::init_repeated(&mut dst.#fname, &buf, #tag);
             })
@@ -444,12 +343,16 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
     });
 
     // Collect oneof fields, separating required from optional
-    let oneof_fields: Vec<&&FieldInfo> = regular_fields
+    let oneof_fields: Vec<&&FieldMetadata> = regular_fields
         .iter()
-        .filter(|f| f.oneof_tags.is_some())
+        .filter(|f| f.attrs.oneof_tags.is_some())
         .collect();
-    let (required_oneof_fields, optional_oneof_fields): (Vec<&&FieldInfo>, Vec<&&FieldInfo>) =
-        oneof_fields.into_iter().partition(|f| f.oneof_required);
+    let (required_oneof_fields, optional_oneof_fields): (
+        Vec<&&FieldMetadata>,
+        Vec<&&FieldMetadata>,
+    ) = oneof_fields
+        .into_iter()
+        .partition(|f| f.attrs.oneof_required);
 
     // Generate temporary variables for required oneofs
     let required_oneof_temps = required_oneof_fields.iter().map(|f| {
@@ -474,20 +377,20 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
     // Generate match arms for regular fields (excluding unknown field)
     let regular_decode_arms = regular_fields.iter().filter_map(|f| {
         // Skip oneof fields - they're handled separately
-        if f.oneof_tags.is_some() {
+        if f.attrs.oneof_tags.is_some() {
             return None;
         }
 
         let fname = f.name;
         let fty = f.ty;
-        let tag = f.tag;
+        let tag = f.attrs.tag;
 
-        if f.map {
+        if f.attrs.map {
             // Map fields decode a single entry per tag occurrence
             Some(quote! {
                 #tag => protomon::codec::ProtoMap::decode_entry(&mut dst.#fname, &mut buf)?,
             })
-        } else if f.repeated {
+        } else if f.attrs.repeated {
             // For Vec<T> repeated fields, use decode_repeated_into which handles packed encoding
             // Extract the inner type T from Vec<T>
             if let Some(inner_ty) = extract_vec_inner_type(fty) {
@@ -511,7 +414,7 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
     let optional_oneof_decode_arms = optional_oneof_fields.iter().flat_map(|f| {
         let fname = f.name;
         let fty = f.ty;
-        let tags = f.oneof_tags.as_ref().unwrap();
+        let tags = f.attrs.oneof_tags.as_ref().unwrap();
 
         // Extract the inner type from Option<T> for the decode_oneof_field call
         let inner_ty = extract_option_inner_type(fty);
@@ -537,7 +440,7 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
         let fname = f.name;
         let temp_name = format_ident!("__oneof_{}", fname);
         let fty = f.ty; // Already the non-Option type
-        let tags = f.oneof_tags.as_ref().unwrap();
+        let tags = f.attrs.oneof_tags.as_ref().unwrap();
 
         tags.iter().map(move |tag| {
             quote! {
@@ -553,7 +456,7 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
         let fname = f.name;
         let temp_name = format_ident!("__oneof_{}", fname);
         // Use the first tag in the oneof as the identifying tag for errors
-        let first_tag = f.oneof_tags.as_ref().unwrap()[0];
+        let first_tag = f.attrs.oneof_tags.as_ref().unwrap()[0];
 
         quote! {
             dst.#fname = #temp_name.ok_or_else(|| protomon::error::DecodeError::missing_required_oneof(#first_tag))?;
@@ -659,39 +562,39 @@ fn generate_decode_into(fields: &[FieldInfo]) -> TokenStream2 {
     }
 }
 
-fn generate_encode(fields: &[FieldInfo]) -> TokenStream2 {
+fn generate_encode(fields: &[FieldMetadata]) -> TokenStream2 {
     // Find the unknown field if present
-    let unknown_field = fields.iter().find(|f| f.unknown);
+    let unknown_field = fields.iter().find(|f| f.attrs.unknown);
 
     // Filter out the unknown field from normal processing
-    let regular_fields: Vec<_> = fields.iter().filter(|f| !f.unknown).collect();
+    let regular_fields: Vec<_> = fields.iter().filter(|f| !f.attrs.unknown).collect();
 
     let encode_fields = regular_fields.iter().map(|f| {
         let fname = f.name;
         let fty = f.ty;
-        let tag = f.tag;
+        let tag = f.attrs.tag;
 
-        if f.oneof_tags.is_some() && f.oneof_required {
+        if f.attrs.oneof_tags.is_some() && f.attrs.oneof_required {
             // Required oneof fields encode directly (field type is T, not Option<T>)
             quote! {
                 self.#fname.encode_variant(buf);
             }
-        } else if f.oneof_tags.is_some() {
+        } else if f.attrs.oneof_tags.is_some() {
             // Optional oneof fields use the specialized encode helper
             quote! {
                 protomon::codec::encode_oneof_field(&self.#fname, buf);
             }
-        } else if f.map {
+        } else if f.attrs.map {
             // Map fields encode all entries with their field keys
             quote! {
                 protomon::codec::ProtoMap::encode_map(&self.#fname, #tag, buf);
             }
-        } else if f.repeated {
+        } else if f.attrs.repeated {
             // Both Vec<T> and Repeated<T> implement ProtoRepeated
             quote! {
                 protomon::codec::ProtoRepeated::encode_repeated(&self.#fname, #tag, buf);
             }
-        } else if f.optional {
+        } else if f.attrs.optional {
             // Optional fields only encode if Some
             quote! {
                 if let Some(ref value) = self.#fname {
@@ -732,39 +635,39 @@ fn generate_encode(fields: &[FieldInfo]) -> TokenStream2 {
     }
 }
 
-fn generate_len(fields: &[FieldInfo]) -> TokenStream2 {
+fn generate_len(fields: &[FieldMetadata]) -> TokenStream2 {
     // Find the unknown field if present
-    let unknown_field = fields.iter().find(|f| f.unknown);
+    let unknown_field = fields.iter().find(|f| f.attrs.unknown);
 
     // Filter out the unknown field from normal processing
-    let regular_fields: Vec<_> = fields.iter().filter(|f| !f.unknown).collect();
+    let regular_fields: Vec<_> = fields.iter().filter(|f| !f.attrs.unknown).collect();
 
     let len_fields = regular_fields.iter().map(|f| {
         let fname = f.name;
         let fty = f.ty;
-        let tag = f.tag;
+        let tag = f.attrs.tag;
 
-        if f.oneof_tags.is_some() && f.oneof_required {
+        if f.attrs.oneof_tags.is_some() && f.attrs.oneof_required {
             // Required oneof fields use direct length calculation
             quote! {
                 len += self.#fname.encoded_variant_len();
             }
-        } else if f.oneof_tags.is_some() {
+        } else if f.attrs.oneof_tags.is_some() {
             // Optional oneof fields use the specialized len helper
             quote! {
                 len += protomon::codec::encoded_oneof_field_len(&self.#fname);
             }
-        } else if f.map {
+        } else if f.attrs.map {
             // Map fields include their own field keys
             quote! {
                 len += protomon::codec::ProtoMap::encoded_map_len(&self.#fname, #tag);
             }
-        } else if f.repeated {
+        } else if f.attrs.repeated {
             // Both Vec<T> and Repeated<T> implement ProtoRepeated
             quote! {
                 len += protomon::codec::ProtoRepeated::encoded_repeated_len(&self.#fname, #tag);
             }
-        } else if f.optional {
+        } else if f.attrs.optional {
             // Optional fields only count if Some
             quote! {
                 if let Some(ref value) = self.#fname {
@@ -876,6 +779,16 @@ struct OneofVariantInfo<'a> {
     tag: u32,
 }
 
+/// Raw attributes parsed from `#[proto(...)]` on a oneof variant.
+///
+/// Uses darling for declarative parsing. Validation is done separately.
+#[derive(Debug, Default, FromMeta)]
+#[darling(default)]
+struct RawProtoVariantAttrs {
+    /// The protobuf tag number for this variant.
+    tag: Option<u32>,
+}
+
 fn impl_proto_oneof(input: &DeriveInput) -> Result<TokenStream2> {
     let name = &input.ident;
 
@@ -923,28 +836,25 @@ fn parse_oneof_variant(variant: &Variant) -> Result<OneofVariantInfo<'_>> {
         }
     };
 
-    // Parse tag from attributes
-    let mut tag = None;
-    for attr in &variant.attrs {
-        if attr.path().is_ident("proto") {
-            attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("tag") {
-                    let value: syn::LitInt = meta.value()?.parse()?;
-                    let parsed_tag = value.base10_parse::<u32>()?;
-                    validate_tag(parsed_tag, value.span())?;
-                    tag = Some(parsed_tag);
-                }
-                Ok(())
-            })?;
-        }
-    }
+    // Find the #[proto(...)] attribute and parse it with darling
+    let raw = variant
+        .attrs
+        .iter()
+        .find(|attr| attr.path().is_ident("proto"))
+        .map(|attr| RawProtoVariantAttrs::from_meta(&attr.meta))
+        .transpose()
+        .map_err(|e| syn::Error::new_spanned(variant, e.to_string()))?
+        .unwrap_or_default();
 
-    match tag {
-        Some(t) => Ok(OneofVariantInfo {
-            name: &variant.ident,
-            ty,
-            tag: t,
-        }),
+    match raw.tag {
+        Some(t) => {
+            validate_tag(t, variant.span())?;
+            Ok(OneofVariantInfo {
+                name: &variant.ident,
+                ty,
+                tag: t,
+            })
+        }
         None => Err(syn::Error::new_spanned(
             variant,
             "missing #[proto(tag = N)] attribute on oneof variant",
