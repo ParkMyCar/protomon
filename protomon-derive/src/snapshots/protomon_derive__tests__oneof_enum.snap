@@ -1,0 +1,126 @@
+---
+source: protomon-derive/src/lib.rs
+expression: format_tokens(output)
+---
+impl protomon::codec::ProtoOneof for Payload {
+    fn decode_variant<B: bytes::Buf>(
+        tag: u32,
+        wire_type: protomon::wire::WireType,
+        buf: &mut B,
+        offset: usize,
+    ) -> Result<Option<Self>, protomon::error::DecodeError> {
+        match tag {
+            1u32 => {
+                if wire_type != <i32 as protomon::codec::ProtoType>::WIRE_TYPE {
+                    return Err(
+                        protomon::error::DecodeError::invalid_wire_type(wire_type as u8),
+                    );
+                }
+                let mut value = <i32 as ::core::default::Default>::default();
+                <i32 as protomon::codec::ProtoDecode>::decode_into(
+                    buf,
+                    &mut value,
+                    offset,
+                )?;
+                Ok(Some(Payload::IntValue(value)))
+            }
+            2u32 => {
+                if wire_type != <String as protomon::codec::ProtoType>::WIRE_TYPE {
+                    return Err(
+                        protomon::error::DecodeError::invalid_wire_type(wire_type as u8),
+                    );
+                }
+                let mut value = <String as ::core::default::Default>::default();
+                <String as protomon::codec::ProtoDecode>::decode_into(
+                    buf,
+                    &mut value,
+                    offset,
+                )?;
+                Ok(Some(Payload::StringValue(value)))
+            }
+            3u32 => {
+                if wire_type
+                    != <Box<NestedMessage> as protomon::codec::ProtoType>::WIRE_TYPE
+                {
+                    return Err(
+                        protomon::error::DecodeError::invalid_wire_type(wire_type as u8),
+                    );
+                }
+                let mut value = <Box<
+                    NestedMessage,
+                > as ::core::default::Default>::default();
+                <Box<
+                    NestedMessage,
+                > as protomon::codec::ProtoDecode>::decode_into(
+                    buf,
+                    &mut value,
+                    offset,
+                )?;
+                Ok(Some(Payload::Nested(value)))
+            }
+            _ => Ok(None),
+        }
+    }
+    fn encode_variant<B: bytes::BufMut>(&self, buf: &mut B) {
+        match self {
+            Payload::IntValue(ref value) => {
+                protomon::wire::encode_key(
+                    <i32 as protomon::codec::ProtoType>::WIRE_TYPE,
+                    1u32,
+                    buf,
+                );
+                <i32 as protomon::codec::ProtoEncode>::encode(value, buf);
+            }
+            Payload::StringValue(ref value) => {
+                protomon::wire::encode_key(
+                    <String as protomon::codec::ProtoType>::WIRE_TYPE,
+                    2u32,
+                    buf,
+                );
+                <String as protomon::codec::ProtoEncode>::encode(value, buf);
+            }
+            Payload::Nested(ref value) => {
+                protomon::wire::encode_key(
+                    <Box<NestedMessage> as protomon::codec::ProtoType>::WIRE_TYPE,
+                    3u32,
+                    buf,
+                );
+                <Box<NestedMessage> as protomon::codec::ProtoEncode>::encode(value, buf);
+            }
+        }
+    }
+    fn encoded_variant_len(&self) -> usize {
+        match self {
+            Payload::IntValue(ref value) => {
+                protomon::wire::encoded_key_len(1u32)
+                    + <i32 as protomon::codec::ProtoEncode>::encoded_len(value)
+            }
+            Payload::StringValue(ref value) => {
+                protomon::wire::encoded_key_len(2u32)
+                    + <String as protomon::codec::ProtoEncode>::encoded_len(value)
+            }
+            Payload::Nested(ref value) => {
+                protomon::wire::encoded_key_len(3u32)
+                    + <Box<
+                        NestedMessage,
+                    > as protomon::codec::ProtoEncode>::encoded_len(value)
+            }
+        }
+    }
+    fn variant_tag(&self) -> u32 {
+        match self {
+            Payload::IntValue(_) => 1u32,
+            Payload::StringValue(_) => 2u32,
+            Payload::Nested(_) => 3u32,
+        }
+    }
+    fn variant_wire_type(&self) -> protomon::wire::WireType {
+        match self {
+            Payload::IntValue(_) => <i32 as protomon::codec::ProtoType>::WIRE_TYPE,
+            Payload::StringValue(_) => <String as protomon::codec::ProtoType>::WIRE_TYPE,
+            Payload::Nested(_) => {
+                <Box<NestedMessage> as protomon::codec::ProtoType>::WIRE_TYPE
+            }
+        }
+    }
+}

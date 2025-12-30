@@ -789,3 +789,6 @@ fn generate_oneof_wire_type(enum_name: &Ident, variants: &[OneofVariantInfo]) ->
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

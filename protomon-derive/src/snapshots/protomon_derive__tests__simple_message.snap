@@ -1,0 +1,108 @@
+---
+source: protomon-derive/src/lib.rs
+expression: format_tokens(output)
+---
+impl protomon::codec::ProtoType for Person {
+    const WIRE_TYPE: protomon::wire::WireType = protomon::wire::WireType::Len;
+}
+impl protomon::codec::ProtoMessage for Person {
+    #[inline(always)]
+    fn decode_message_into(
+        buf: bytes::Bytes,
+        dst: &mut Self,
+    ) -> Result<(), protomon::error::DecodeError> {
+        use bytes::Buf;
+        use protomon::codec::ProtoDecode;
+        use protomon::wire::{decode_key, skip_field};
+        let original_len = buf.len();
+        let mut buf = buf;
+        while buf.has_remaining() {
+            let (wire_type, tag) = decode_key(&mut buf)?.into_parts();
+            let value_offset = original_len - buf.remaining();
+            match tag {
+                1u32 => {
+                    <String as protomon::codec::ProtoDecode>::decode_into(
+                        &mut buf,
+                        &mut dst.name,
+                        value_offset,
+                    )?
+                }
+                2u32 => {
+                    <i32 as protomon::codec::ProtoDecode>::decode_into(
+                        &mut buf,
+                        &mut dst.id,
+                        value_offset,
+                    )?
+                }
+                _ => skip_field(wire_type, &mut buf)?,
+            }
+        }
+        Ok(())
+    }
+    fn encode_message<B: bytes::BufMut>(&self, buf: &mut B) {
+        if !<String as protomon::codec::IsProtoDefault>::is_proto_default(&self.name) {
+            protomon::wire::encode_key(
+                <String as protomon::codec::ProtoType>::WIRE_TYPE,
+                1u32,
+                buf,
+            );
+            <String as protomon::codec::ProtoEncode>::encode(&self.name, buf);
+        }
+        if !<i32 as protomon::codec::IsProtoDefault>::is_proto_default(&self.id) {
+            protomon::wire::encode_key(
+                <i32 as protomon::codec::ProtoType>::WIRE_TYPE,
+                2u32,
+                buf,
+            );
+            <i32 as protomon::codec::ProtoEncode>::encode(&self.id, buf);
+        }
+    }
+    fn encoded_message_len(&self) -> usize {
+        let mut len = 0usize;
+        if !<String as protomon::codec::IsProtoDefault>::is_proto_default(&self.name) {
+            len
+                += protomon::wire::encoded_key_len(1u32)
+                    + <String as protomon::codec::ProtoEncode>::encoded_len(&self.name);
+        }
+        if !<i32 as protomon::codec::IsProtoDefault>::is_proto_default(&self.id) {
+            len
+                += protomon::wire::encoded_key_len(2u32)
+                    + <i32 as protomon::codec::ProtoEncode>::encoded_len(&self.id);
+        }
+        len
+    }
+}
+impl protomon::codec::ProtoDecode for Person {
+    #[inline(always)]
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), protomon::error::DecodeError> {
+        use bytes::Buf;
+        let len = protomon::wire::decode_len(buf)?;
+        if buf.remaining() < len {
+            return Err(protomon::error::DecodeError::unexpected_end_of_buffer());
+        }
+        <Self as protomon::codec::ProtoMessage>::decode_message_into(
+            buf.copy_to_bytes(len),
+            dst,
+        )?;
+        Ok(())
+    }
+}
+impl protomon::codec::ProtoEncode for Person {
+    #[inline]
+    fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+        use protomon::leb128::LebCodec;
+        let len = <Self as protomon::codec::ProtoMessage>::encoded_message_len(self);
+        (len as u64).encode_leb128(buf);
+        <Self as protomon::codec::ProtoMessage>::encode_message(self, buf);
+    }
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        use protomon::leb128::LebCodec;
+        let len = <Self as protomon::codec::ProtoMessage>::encoded_message_len(self);
+        (len as u64).encoded_leb128_len() + len
+    }
+}

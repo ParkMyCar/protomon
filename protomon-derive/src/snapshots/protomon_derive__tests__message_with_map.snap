@@ -1,0 +1,73 @@
+---
+source: protomon-derive/src/lib.rs
+expression: format_tokens(output)
+---
+impl protomon::codec::ProtoType for Message {
+    const WIRE_TYPE: protomon::wire::WireType = protomon::wire::WireType::Len;
+}
+impl protomon::codec::ProtoMessage for Message {
+    #[inline(always)]
+    fn decode_message_into(
+        buf: bytes::Bytes,
+        dst: &mut Self,
+    ) -> Result<(), protomon::error::DecodeError> {
+        use bytes::Buf;
+        use protomon::codec::ProtoDecode;
+        use protomon::wire::{decode_key, skip_field};
+        let original_len = buf.len();
+        let mut buf = buf;
+        while buf.has_remaining() {
+            let (wire_type, tag) = decode_key(&mut buf)?.into_parts();
+            let value_offset = original_len - buf.remaining();
+            match tag {
+                1u32 => {
+                    protomon::codec::ProtoMap::decode_entry(&mut dst.entries, &mut buf)?
+                }
+                _ => skip_field(wire_type, &mut buf)?,
+            }
+        }
+        Ok(())
+    }
+    fn encode_message<B: bytes::BufMut>(&self, buf: &mut B) {
+        protomon::codec::ProtoMap::encode_map(&self.entries, 1u32, buf);
+    }
+    fn encoded_message_len(&self) -> usize {
+        let mut len = 0usize;
+        len += protomon::codec::ProtoMap::encoded_map_len(&self.entries, 1u32);
+        len
+    }
+}
+impl protomon::codec::ProtoDecode for Message {
+    #[inline(always)]
+    fn decode_into<B: bytes::Buf>(
+        buf: &mut B,
+        dst: &mut Self,
+        _offset: usize,
+    ) -> Result<(), protomon::error::DecodeError> {
+        use bytes::Buf;
+        let len = protomon::wire::decode_len(buf)?;
+        if buf.remaining() < len {
+            return Err(protomon::error::DecodeError::unexpected_end_of_buffer());
+        }
+        <Self as protomon::codec::ProtoMessage>::decode_message_into(
+            buf.copy_to_bytes(len),
+            dst,
+        )?;
+        Ok(())
+    }
+}
+impl protomon::codec::ProtoEncode for Message {
+    #[inline]
+    fn encode<B: bytes::BufMut>(&self, buf: &mut B) {
+        use protomon::leb128::LebCodec;
+        let len = <Self as protomon::codec::ProtoMessage>::encoded_message_len(self);
+        (len as u64).encode_leb128(buf);
+        <Self as protomon::codec::ProtoMessage>::encode_message(self, buf);
+    }
+    #[inline]
+    fn encoded_len(&self) -> usize {
+        use protomon::leb128::LebCodec;
+        let len = <Self as protomon::codec::ProtoMessage>::encoded_message_len(self);
+        (len as u64).encoded_leb128_len() + len
+    }
+}
