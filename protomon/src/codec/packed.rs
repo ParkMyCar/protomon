@@ -368,7 +368,7 @@ impl_packed_fixed_8byte! {
 #[inline]
 fn decode_packed_4byte<T: PackedElement>(data: &[u8], dst: &mut Vec<T>) -> Result<(), DecodeError> {
     let len = data.len();
-    if len % 4 != 0 {
+    if !len.is_multiple_of(4) {
         return Err(DecodeError::invalid_packed_length(
             4,
             u32::truncating_cast_from(len),
@@ -419,7 +419,7 @@ fn decode_packed_4byte<T: PackedElement>(data: &[u8], dst: &mut Vec<T>) -> Resul
 #[inline]
 fn decode_packed_8byte<T: PackedElement>(data: &[u8], dst: &mut Vec<T>) -> Result<(), DecodeError> {
     let len = data.len();
-    if len % 8 != 0 {
+    if !len.is_multiple_of(8) {
         return Err(DecodeError::invalid_packed_length(
             8,
             u32::truncating_cast_from(len),

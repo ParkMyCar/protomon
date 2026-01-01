@@ -22,10 +22,7 @@ pub fn generate_enum(
     let enum_name = format_ident!("{}", name);
 
     // Generate doc comment for the enum
-    let enum_doc = comments
-        .get(enum_path)
-        .map(|c| doc_comment(c))
-        .unwrap_or_default();
+    let enum_doc = comments.get(enum_path).map(doc_comment).unwrap_or_default();
 
     // Generate variants with comments
     let variants: Vec<TokenStream> = enum_type
@@ -42,7 +39,7 @@ pub fn generate_enum(
             let value_path = enum_path.enum_value(i);
             let value_doc = comments
                 .get(&value_path)
-                .map(|c| doc_comment(c))
+                .map(doc_comment)
                 .unwrap_or_default();
 
             Ok(quote! {

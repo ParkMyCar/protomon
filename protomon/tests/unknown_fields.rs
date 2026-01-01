@@ -43,11 +43,12 @@ pub struct ExtendedMessage {
 #[test]
 fn test_unknown_fields_preserved() {
     // Create an extended message with extra fields
-    let mut extended = ExtendedMessage::default();
-    extended.name = ProtoString::from("Alice");
-    extended.age = 30;
-    extended.email = Some(ProtoString::from("alice@example.com"));
-    extended.score = 100;
+    let extended = ExtendedMessage {
+        name: ProtoString::from("Alice"),
+        age: 30,
+        email: Some(ProtoString::from("alice@example.com")),
+        score: 100,
+    };
 
     // Encode the extended message
     let mut buf = Vec::new();
@@ -87,11 +88,12 @@ fn test_unknown_fields_preserved() {
 #[test]
 fn test_unknown_fields_not_preserved() {
     // Create an extended message
-    let mut extended = ExtendedMessage::default();
-    extended.name = ProtoString::from("Bob");
-    extended.age = 25;
-    extended.email = Some(ProtoString::from("bob@example.com"));
-    extended.score = 200;
+    let extended = ExtendedMessage {
+        name: ProtoString::from("Bob"),
+        age: 25,
+        email: Some(ProtoString::from("bob@example.com")),
+        score: 200,
+    };
 
     // Encode the extended message
     let mut buf = Vec::new();
@@ -123,9 +125,11 @@ fn test_unknown_fields_not_preserved() {
 #[test]
 fn test_empty_unknown_fields() {
     // Create a message with only known fields
-    let mut msg = MessageWithUnknown::default();
-    msg.name = ProtoString::from("Charlie");
-    msg.age = 35;
+    let msg = MessageWithUnknown {
+        name: ProtoString::from("Charlie"),
+        age: 35,
+        ..Default::default()
+    };
 
     // Encode and decode
     let mut buf = Vec::new();
@@ -141,11 +145,12 @@ fn test_empty_unknown_fields() {
 #[test]
 fn test_unknown_fields_length_calculation() {
     // Create an extended message
-    let mut extended = ExtendedMessage::default();
-    extended.name = ProtoString::from("Dave");
-    extended.age = 40;
-    extended.email = Some(ProtoString::from("dave@example.com"));
-    extended.score = 300;
+    let extended = ExtendedMessage {
+        name: ProtoString::from("Dave"),
+        age: 40,
+        email: Some(ProtoString::from("dave@example.com")),
+        score: 300,
+    };
 
     // Encode the extended message
     let mut buf = Vec::new();
@@ -192,13 +197,14 @@ pub struct MinimalWithUnknown {
 #[test]
 fn test_unknown_fields_multiple_wire_types() {
     // Create a message with all wire types
-    let mut multi = MultiWireTypeMessage::default();
-    multi.varint_field = 42;
-    multi.fixed64_field = protomon::codec::Fixed64(0x123456789ABCDEF0);
-    multi.string_field = ProtoString::from("hello");
-    multi.fixed32_field = protomon::codec::Fixed32(0x12345678);
-    multi.sint32_field = protomon::codec::Sint32(-100);
-    multi.bytes_field = protomon::codec::ProtoBytes::from(&[1u8, 2, 3, 4, 5][..]);
+    let multi = MultiWireTypeMessage {
+        varint_field: 42,
+        fixed64_field: protomon::codec::Fixed64(0x123456789ABCDEF0),
+        string_field: ProtoString::from("hello"),
+        fixed32_field: protomon::codec::Fixed32(0x12345678),
+        sint32_field: protomon::codec::Sint32(-100),
+        bytes_field: protomon::codec::ProtoBytes::from(&[1u8, 2, 3, 4, 5][..]),
+    };
 
     // Encode the full message
     let mut buf = Vec::new();
@@ -235,13 +241,14 @@ fn test_unknown_fields_multiple_wire_types() {
 fn test_unknown_fields_multiple_unknown_fields() {
     // Use MultiWireTypeMessage to test multiple unknown fields
     // MinimalWithUnknown knows tag 1 as varint, which matches MultiWireTypeMessage's tag 1
-    let mut multi = MultiWireTypeMessage::default();
-    multi.varint_field = 123; // tag 1 - known
-    multi.fixed64_field = protomon::codec::Fixed64(999); // tag 2 - unknown
-    multi.string_field = ProtoString::from("test"); // tag 3 - unknown
-    multi.fixed32_field = protomon::codec::Fixed32(456); // tag 4 - unknown
-    multi.sint32_field = protomon::codec::Sint32(-50); // tag 5 - unknown
-    multi.bytes_field = protomon::codec::ProtoBytes::from(&[10u8, 20, 30][..]); // tag 6 - unknown
+    let multi = MultiWireTypeMessage {
+        varint_field: 123,                            // tag 1 - known
+        fixed64_field: protomon::codec::Fixed64(999), // tag 2 - unknown
+        string_field: ProtoString::from("test"),      // tag 3 - unknown
+        fixed32_field: protomon::codec::Fixed32(456), // tag 4 - unknown
+        sint32_field: protomon::codec::Sint32(-50),   // tag 5 - unknown
+        bytes_field: protomon::codec::ProtoBytes::from(&[10u8, 20, 30][..]), // tag 6 - unknown
+    };
 
     // Encode
     let mut buf = Vec::new();
@@ -286,13 +293,14 @@ fn test_unknown_fields_interleaved_with_known() {
         pub _unknown: Bytes,
     }
 
-    let mut multi = MultiWireTypeMessage::default();
-    multi.varint_field = 42; // tag 1 - will be unknown
-    multi.fixed64_field = protomon::codec::Fixed64(100); // tag 2 - will be unknown
-    multi.string_field = ProtoString::from("middle_value"); // tag 3 - known
-    multi.fixed32_field = protomon::codec::Fixed32(200); // tag 4 - will be unknown
-    multi.sint32_field = protomon::codec::Sint32(-10); // tag 5 - will be unknown
-    multi.bytes_field = protomon::codec::ProtoBytes::from(&[5u8, 6, 7][..]); // tag 6 - will be unknown
+    let multi = MultiWireTypeMessage {
+        varint_field: 42,                                // tag 1 - will be unknown
+        fixed64_field: protomon::codec::Fixed64(100),    // tag 2 - will be unknown
+        string_field: ProtoString::from("middle_value"), // tag 3 - known
+        fixed32_field: protomon::codec::Fixed32(200),    // tag 4 - will be unknown
+        sint32_field: protomon::codec::Sint32(-10),      // tag 5 - will be unknown
+        bytes_field: protomon::codec::ProtoBytes::from(&[5u8, 6, 7][..]), // tag 6 - will be unknown
+    };
 
     let mut buf = Vec::new();
     multi.encode_message(&mut buf);

@@ -225,7 +225,6 @@ pub struct MessageOptions {
     pub map_entry: Option<bool>,
 
     // Protomon extensions (field numbers 50010-50019 reserved for message options)
-
     /// Whether to preserve unknown fields for round-trip compatibility.
     /// Extension field 50010.
     #[proto(tag = 50010, optional)]

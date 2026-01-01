@@ -29,7 +29,7 @@ pub fn generate_field(
     // Get field comment
     let field_doc = field_index
         .map(|i| msg_path.field(i))
-        .and_then(|path| comments.get(&path).map(|c| doc_comment(c)))
+        .and_then(|path| comments.get(&path).map(doc_comment))
         .unwrap_or_default();
 
     let proto_type = field

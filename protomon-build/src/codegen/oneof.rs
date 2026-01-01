@@ -157,7 +157,7 @@ pub fn generate_oneof_field(
     let oneof_path = msg_path.oneof(oneof.oneof_index);
     let oneof_doc = comments
         .get(&oneof_path)
-        .map(|c| doc_comment(c))
+        .map(doc_comment)
         .unwrap_or_default();
 
     // The enum is defined in a submodule named after the parent message

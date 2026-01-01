@@ -5,6 +5,8 @@
 
 use bytes::Bytes;
 use protomon::codec::{Fixed32, Fixed64, ProtoMessage, Sfixed32, Sfixed64, Sint32, Sint64};
+use std::f32::consts::PI as PI32;
+use std::f64::consts::{E as E64, PI as PI64};
 use std::path::PathBuf;
 
 use crate::protos::conformance::*;
@@ -426,7 +428,7 @@ mod scalars {
     fn float_pi() {
         let data = read_bin("scalars", "float_pi");
         let msg = FloatValue::decode_message(data).unwrap();
-        assert!((msg.value - 3.14159f32).abs() < 1e-5);
+        assert!((msg.value - PI32).abs() < 1e-5);
     }
 
     #[test]
@@ -470,7 +472,7 @@ mod scalars {
     fn double_pi() {
         let data = read_bin("scalars", "double_pi");
         let msg = DoubleValue::decode_message(data).unwrap();
-        assert!((msg.value - 3.141592653589793f64).abs() < 1e-10);
+        assert!((msg.value - PI64).abs() < 1e-10);
     }
 
     #[test]
@@ -558,8 +560,8 @@ mod scalars {
         assert_eq!(msg.val_sfixed32, Sfixed32(-12345));
         assert_eq!(msg.val_fixed64, Fixed64(0xdeadbeefcafebabe));
         assert_eq!(msg.val_sfixed64, Sfixed64(-9876543210));
-        assert!((msg.val_float - 3.14159f32).abs() < 1e-4);
-        assert!((msg.val_double - 2.718281828459045f64).abs() < 1e-10);
+        assert!((msg.val_float - PI32).abs() < 1e-4);
+        assert!((msg.val_double - E64).abs() < 1e-10);
         assert_eq!(msg.val_string.as_str(), "Hello, Protocol Buffers!");
         // "binary\000data" = b"binary\0data"
         assert_eq!(msg.val_bytes.as_ref(), b"binary\0data");
@@ -807,7 +809,7 @@ mod repeated {
         assert_eq!(values[0], 0.0f32);
         assert_eq!(values[1], 1.0f32);
         assert_eq!(values[2], -1.0f32);
-        assert!((values[3] - 3.14159f32).abs() < 1e-4);
+        assert!((values[3] - PI32).abs() < 1e-4);
         assert_eq!(values[4], f32::MAX);
     }
 
@@ -820,7 +822,7 @@ mod repeated {
         assert_eq!(values[0], 0.0f64);
         assert_eq!(values[1], 1.0f64);
         assert_eq!(values[2], -1.0f64);
-        assert!((values[3] - 3.141592653589793f64).abs() < 1e-10);
+        assert!((values[3] - PI64).abs() < 1e-10);
         assert_eq!(values[4], f64::MAX);
     }
 
@@ -899,7 +901,14 @@ mod nested {
         // Empty message - all defaults
         assert_eq!(msg.id, 0);
         // In proto3, submessage field is None when not present
-        assert!(msg.inner.is_none() || msg.inner.as_ref().map(|i| i.value == 0 && i.name.as_str() == "").unwrap_or(false));
+        assert!(
+            msg.inner.is_none()
+                || msg
+                    .inner
+                    .as_ref()
+                    .map(|i| i.value == 0 && i.name.as_str() == "")
+                    .unwrap_or(false)
+        );
         assert!(msg.items.is_empty());
     }
 
@@ -1079,7 +1088,7 @@ mod edge_cases {
         // 64-bit (wire type 1)
         assert_eq!(msg.i64_fixed64, Fixed64(0xdeadbeefcafebabe));
         assert_eq!(msg.i64_sfixed64, Sfixed64(-9876543210));
-        assert!((msg.i64_double - 3.141592653589793f64).abs() < 1e-10);
+        assert!((msg.i64_double - PI64).abs() < 1e-10);
 
         // Length-delimited (wire type 2)
         assert_eq!(msg.len_string.as_str(), "hello world");
@@ -1091,7 +1100,7 @@ mod edge_cases {
         // 32-bit (wire type 5)
         assert_eq!(msg.i32_fixed32, Fixed32(0xdeadbeef));
         assert_eq!(msg.i32_sfixed32, Sfixed32(-12345));
-        assert!((msg.i32_float - 3.14159f32).abs() < 1e-4);
+        assert!((msg.i32_float - PI32).abs() < 1e-4);
     }
 
     #[test]

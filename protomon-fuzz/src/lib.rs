@@ -823,7 +823,7 @@ mod tests {
 
         let num = FieldDescriptor::generate_field_number(18999, &used);
         // Should skip the reserved range 19000-19999
-        assert!(num >= 20000 || num < 19000);
+        assert!(!(19000..20000).contains(&num));
         assert_snapshot!(format!("generated field number: {}", num), @"generated field number: 20000");
     }
 

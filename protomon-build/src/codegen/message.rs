@@ -30,10 +30,7 @@ pub fn generate_message(
     };
 
     // Generate doc comment for the struct
-    let struct_doc = comments
-        .get(msg_path)
-        .map(|c| doc_comment(c))
-        .unwrap_or_default();
+    let struct_doc = comments.get(msg_path).map(doc_comment).unwrap_or_default();
 
     // Collect oneofs (excluding proto3 optional synthetic oneofs)
     let oneofs = collect_oneofs(message);
@@ -70,7 +67,15 @@ pub fn generate_message(
         })
         .map(|f| {
             let field_index = f.number.and_then(|n| field_indices.get(&n).copied());
-            generate_field(ctx, &full_path, f, is_proto3, comments, msg_path, field_index)
+            generate_field(
+                ctx,
+                &full_path,
+                f,
+                is_proto3,
+                comments,
+                msg_path,
+                field_index,
+            )
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -128,8 +133,14 @@ pub fn generate_message(
             continue;
         }
         let nested_path = msg_path.nested_message(nested_msg_index);
-        let msg_tokens =
-            generate_message(ctx, &full_path, nested_msg, is_proto3, comments, &nested_path)?;
+        let msg_tokens = generate_message(
+            ctx,
+            &full_path,
+            nested_msg,
+            is_proto3,
+            comments,
+            &nested_path,
+        )?;
         nested.extend(msg_tokens);
         nested_msg_index += 1;
     }

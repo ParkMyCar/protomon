@@ -281,7 +281,7 @@ fn generate_singular_value(
                 Ok(FieldValue::Message(Box::new(nested_value)))
             } else {
                 // Invalid reference, generate empty message
-                Ok(FieldValue::Message(Box::new(MessageValue::new())))
+                Ok(FieldValue::Message(Box::default()))
             }
         }
     }
@@ -498,8 +498,8 @@ mod tests {
             ("uint64", ScalarValue::Uint64(u64::MAX)),
             ("bool_true", ScalarValue::Bool(true)),
             ("bool_false", ScalarValue::Bool(false)),
-            ("float", ScalarValue::Float(3.14)),
-            ("double", ScalarValue::Double(2.718281828)),
+            ("float", ScalarValue::Float(3.125)),
+            ("double", ScalarValue::Double(2.75)),
             ("string", ScalarValue::String("hello world".to_string())),
             (
                 "string_escape",
@@ -520,8 +520,8 @@ mod tests {
         uint64: "18446744073709551615"
         bool_true: true
         bool_false: false
-        float: 3.14
-        double: 2.718281828
+        float: 3.125
+        double: 2.75
         string: "hello world"
         string_escape: "line1\nline2\ttab\"quote"
         bytes: "AAEC/w=="
@@ -625,7 +625,7 @@ mod tests {
         );
         msg.fields.insert(
             "score".to_string(),
-            FieldValue::Scalar(ScalarValue::Double(3.14159)),
+            FieldValue::Scalar(ScalarValue::Double(98.6)),
         );
         msg.fields.insert(
             "active".to_string(),
@@ -648,7 +648,7 @@ mod tests {
         data: "\336\255\276\357"
         id: 42
         name: "Hello, World!"
-        score: 3.14159
+        score: 98.6
         tags: "rust"
         tags: "protobuf"
         "#);
